@@ -22,7 +22,7 @@ A playful but hard-to-ignore break reminder for Hyprland on Linux. It distorts t
 ## Implementation boundaries
 
 - One Rust executable provides windowless background operation, the editor, capability diagnostics, emergency stop, and an internal guardian process. Embed required shaders, artwork, and fonts. Temporary runtime files are allowed.
-- Use Hyprland's screen shader through direct IPC, not desktop capture, a plugin, or a `hyprctl` subprocess. Support the verified Hyprland 0.56.2 legacy and Lua configuration interfaces without an external Lua interpreter.
+- Use Hyprland's screen shader through direct IPC, not desktop capture, a plugin, or a `hyprctl` subprocess. Do not require an external scripting interpreter.
 - The break controller owns timing and transitions independently of rendering. The effect model maps glitchiness to shader behaviour. Display integration owns installation, overlays, restoration, and recovery.
 - Use standard Wayland input-idle v2 notifications, ignoring media inhibitors; no global keyboard capture or input-device permissions.
 - Use SCTK layer-shell/shared-memory test cards on every output. Consume ordinary keyboard and pointer input so hidden applications receive neither; compositor emergency shortcuts remain available. Handle output creation/removal, scaling, and rotation. This is not a security lock screen.

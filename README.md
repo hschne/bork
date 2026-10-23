@@ -25,18 +25,11 @@ A desktop trial requires confirmation, lasts five seconds, and restores the curr
 
 ## Host requirements
 
-Verified application architecture/artifact: **x86-64 Linux**. Verified compositor: **Hyprland 0.56.2**, both legacy and Lua configuration. Other architectures and compositor versions are not yet verified. GNOME, KDE, Windows, and macOS desktop effects are not supported. The editor does not require Hyprland; its X11 mode was tested in Debian and its Wayland mode in an isolated NixOS session.
-
-Required compositor capabilities:
-
-- Direct Hyprland IPC; `decoration:screen_shader`, `debug:damage_tracking`, `debug:vfr`, and lock-status query.
-- Wayland `ext_idle_notifier_v1` **version 2** input-idle notifications, ignoring media idle inhibitors.
-- Layer-shell, shared-memory buffers, outputs, and an input seat.
-- GLSL ES 300 screen shaders; editor requires OpenGL 3+/GLES 3+ (a working Mesa software renderer is also usable).
+Desktop effects require Hyprland on Linux. Run `signal-loss doctor` to check your session's capabilities. The editor runs independently on Wayland or X11 and requires OpenGL 3+/GLES 3+.
 
 The deployable executable is **dynamically linked, not static**. It uses the standard `/lib64/ld-linux-x86-64.so.2` loader, glibc **2.35 or newer**, and `libgcc_s`. Graphics libraries/drivers are host dependencies loaded at runtime, including Wayland client/cursor, libxkbcommon, EGL/OpenGL; X11 preview additionally uses X11/Xcursor/Xi/Xrandr and **libxkbcommon-x11**. Their transitive dependencies depend on your driver.
 
-For example, the Debian verification environment uses:
+Debian/Ubuntu graphics packages:
 
 ```sh
 apt-get install libwayland-client0 libwayland-cursor0 libxkbcommon0 \
@@ -67,13 +60,7 @@ SIGNAL_LOSS_HYPRLAND_BINARY=/absolute/path/to/Hyprland signal-loss doctor
 
 Interference is intentionally disruptive. The test card consumes ordinary input over every output; it is **not a security lock screen**. Compositor shortcuts remain available. Before ordinary use, arrange a way to run `signal-loss stop`, such as a compositor shortcut or another terminal/TTY.
 
-For a legacy Hyprland configuration, an optional user-managed shortcut is:
-
-```ini
-bind = SUPER SHIFT, Escape, exec, /absolute/path/to/signal-loss stop
-```
-
-Signal Loss never adds that binding itself. Do not use another shader manager to change the same settings during a trial or grace period.
+Configure a compositor shortcut to run `/absolute/path/to/signal-loss stop` if desired. Signal Loss does not add bindings itself. Do not use another shader manager to change the same settings during a trial or grace period.
 
 Recovery safeguards:
 
@@ -105,9 +92,9 @@ docker build --target artifact --output type=local,dest=dist .
 ./dist/signal-loss --version
 ```
 
-`dist/signal-loss` is the application. The other exported text files are dependency inspection evidence, not required runtime files. The build pins Rust 1.93.1's Debian image by digest and uses `Cargo.lock`. It does not publish an image or release, install global tools, or modify the host configuration.
+`dist/signal-loss` is the application; accompanying inspection files are optional.
 
-For native development with Rust 1.93+ and a C linker:
+For native development:
 
 ```sh
 cargo build --locked
@@ -125,7 +112,7 @@ Use `path:./nix`, not `path:.`, to avoid copying `target/` into the Nix store. T
 
 ## Testing
 
-`mise run check` runs formatting, Clippy, and ordinary tests using controlled time and fake compositor sockets; it never activates desktop effects. CI also exercises editor controls and save/reopen under Xvfb/software GL.
+`mise run check` runs formatting, Clippy, and ordinary tests without activating desktop effects.
 
 Optional full display checks:
 
@@ -136,6 +123,4 @@ nix develop path:./nix --command bash tests/nested-session.sh
 nix develop path:./nix --command bash tests/debian-session.sh
 ```
 
-The runners hide active display/session sockets and input/DRM display devices, exposing only a render node. A test-only Aquamarine protocol-negotiation fix stays inside the sandbox; it is not shipped or installed. `tests/preview-smoke.sh` provides the standalone Xvfb editor check used by CI.
-
-Physical hotplug, hardware suspend/resume, other drivers, and battery-life attribution remain manual checks. Nested-session GPU/power samples are not application wattage or battery estimates.
+Display checks run isolated from the active desktop. The harness owns their setup and compatibility workarounds.
