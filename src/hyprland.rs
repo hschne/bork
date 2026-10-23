@@ -6,18 +6,31 @@ use std::{
     io::{Read, Write},
     net::Shutdown,
     os::unix::{ffi::OsStrExt, net::UnixStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Duration,
 };
 
 #[derive(Clone, Debug)]
 pub struct Hyprland {
-    pub socket: PathBuf,
+    socket: PathBuf,
 }
 
 impl Hyprland {
+    /// An immutable compositor endpoint. Each request opens its own bounded connection.
+    pub fn at_socket(socket: PathBuf) -> Self {
+        Self { socket }
+    }
+
+    pub fn socket_path(&self) -> &Path {
+        &self.socket
+    }
+
     pub fn from_env() -> Result<Self> {
         let runtime = env::var_os("XDG_RUNTIME_DIR").context("XDG_RUNTIME_DIR is not set")?;
+        ensure!(
+            Path::new(&runtime).is_absolute(),
+            "XDG_RUNTIME_DIR must be absolute"
+        );
         let signature =
             env::var("HYPRLAND_INSTANCE_SIGNATURE").context("Not in a Hyprland session")?;
         ensure!(

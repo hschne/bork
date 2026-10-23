@@ -1,7 +1,7 @@
 //! Process + Unix-socket simulation. These tests never connect to the user's compositor.
 use signal_loss::{
-    effect::Settings,
-    recovery::{self, Message},
+    effect::{Glitchiness, Settings},
+    recovery::{self, DisplayState, Message},
 };
 use std::{
     collections::HashMap,
@@ -146,6 +146,7 @@ impl Drop for Fake {
 }
 
 struct Process {
+    runtime: PathBuf,
     child: Child,
     input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
@@ -165,6 +166,7 @@ impl Process {
         let input = child.stdin.take();
         let output = BufReader::new(child.stdout.take().unwrap());
         let mut p = Self {
+            runtime: fake.runtime(),
             child,
             input,
             output,
@@ -185,10 +187,16 @@ impl Process {
         self.reply()
     }
     fn install(&mut self, trial: bool) -> String {
-        self.send(Message::Install {
-            shader: Settings::default().hyprland_shader(100.0).unwrap(),
-            trial,
-        })
+        let shader = Settings::default()
+            .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
+            .unwrap();
+        if trial {
+            recovery::request_trial(&self.runtime, &recovery::TrialRequest::Start { shader })
+                .unwrap();
+            "ok".into()
+        } else {
+            self.send(Message::Display(DisplayState::Interference { shader }))
+        }
     }
 }
 
@@ -234,8 +242,7 @@ fn guardian_sigkill_leaves_journal_for_independent_recovery() {
     assert_eq!(process.install(false), "ok");
     process.child.kill().unwrap();
     process.child.wait().unwrap();
-    let _lock = recovery::lock(&fake.runtime()).unwrap();
-    recovery::restore(&fake.runtime()).unwrap();
+    recovery::stop(&fake.runtime()).unwrap();
     fake.wait_original();
 }
 
@@ -279,8 +286,8 @@ fn emergency_socket_stops_even_with_parent_alive() {
 fn five_second_trial_expires_despite_regular_heartbeats() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
-    assert_eq!(process.install(true), "ok");
     let start = Instant::now();
+    assert_eq!(process.install(true), "ok");
     while !fake.original() {
         assert!(start.elapsed() < Duration::from_secs(7));
         assert_eq!(process.send(Message::Heartbeat), "ok");
@@ -348,8 +355,12 @@ fn editor_trial_borrows_owner_and_restores_latest_background_state() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
-    let trial_shader = Settings::default().hyprland_shader(50.0).unwrap();
-    let next_shader = Settings::default().hyprland_shader(10.0).unwrap();
+    let trial_shader = Settings::default()
+        .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
+        .unwrap();
+    let next_shader = Settings::default()
+        .hyprland_shader(Glitchiness::try_from(10.0).unwrap())
+        .unwrap();
     let id = request_trial(
         &fake.runtime(),
         &TrialRequest::Start {
@@ -367,9 +378,9 @@ fn editor_trial_borrows_owner_and_restores_latest_background_state() {
         .is_err()
     );
     assert_eq!(
-        process.send(Message::Update {
+        process.send(Message::Display(DisplayState::Interference {
             shader: next_shader.clone()
-        }),
+        })),
         "ok"
     );
     assert_eq!(
@@ -394,7 +405,7 @@ fn editor_trial_borrows_owner_and_restores_latest_background_state() {
         },
     )
     .unwrap();
-    assert_eq!(process.send(Message::Clear), "ok");
+    assert_eq!(process.send(Message::Display(DisplayState::Work)), "ok");
     assert!(
         !fake.original(),
         "Background Work must not prematurely end the editor's trial"
@@ -414,8 +425,12 @@ fn borrowed_trial_expiry_resumes_newer_background_shader() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
-    let trial_shader = Settings::default().hyprland_shader(50.0).unwrap();
-    let next_shader = Settings::default().hyprland_shader(20.0).unwrap();
+    let trial_shader = Settings::default()
+        .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
+        .unwrap();
+    let next_shader = Settings::default()
+        .hyprland_shader(Glitchiness::try_from(20.0).unwrap())
+        .unwrap();
     request_trial(
         &fake.runtime(),
         &TrialRequest::Start {
@@ -424,9 +439,9 @@ fn borrowed_trial_expiry_resumes_newer_background_shader() {
     )
     .unwrap();
     assert_eq!(
-        process.send(Message::Update {
+        process.send(Message::Display(DisplayState::Interference {
             shader: next_shader.clone()
-        }),
+        })),
         "ok"
     );
     let deadline = Instant::now() + Duration::from_millis(5400);
@@ -440,4 +455,205 @@ fn borrowed_trial_expiry_resumes_newer_background_shader() {
     );
     drop(process);
     fake.wait_original();
+}
+
+#[test]
+fn unlock_reinstates_latest_background_without_a_redundant_publication() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    fake.locked.store(true, Ordering::Relaxed);
+    fake.wait_original();
+    let shader = "latest background while locked".to_owned();
+    assert_eq!(
+        process.send(Message::Display(DisplayState::Interference {
+            shader: shader.clone()
+        })),
+        "ok"
+    );
+    assert!(fake.original());
+    fake.locked.store(false, Ordering::Relaxed);
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        assert_eq!(process.send(Message::Heartbeat), "ok");
+        if std::fs::read_to_string(fake.runtime().join("effect.frag"))
+            .is_ok_and(|current| current == shader)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Unlock did not reinstate the latest background"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn locking_cancels_trial_and_old_receipt_cannot_cancel_its_replacement() {
+    use recovery::{TrialRequest, request_trial};
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    let old = request_trial(
+        &fake.runtime(),
+        &TrialRequest::Start {
+            shader: "old trial".into(),
+        },
+    )
+    .unwrap();
+    fake.locked.store(true, Ordering::Relaxed);
+    fake.wait_original();
+    assert!(
+        request_trial(
+            &fake.runtime(),
+            &TrialRequest::Start {
+                shader: "refused".into()
+            }
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("locked")
+    );
+    // Publish normal work while locked so unlock must not restore an ended trial.
+    assert_eq!(process.send(Message::Display(DisplayState::Work)), "ok");
+    fake.locked.store(false, Ordering::Relaxed);
+    let replacement = request_trial(
+        &fake.runtime(),
+        &TrialRequest::Start {
+            shader: "replacement".into(),
+        },
+    )
+    .unwrap();
+    assert_ne!(old, replacement);
+    request_trial(&fake.runtime(), &TrialRequest::Cancel { id: old }).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(fake.runtime().join("effect.frag")).unwrap(),
+        "replacement"
+    );
+    request_trial(&fake.runtime(), &TrialRequest::Cancel { id: replacement }).unwrap();
+    fake.wait_original();
+}
+
+#[test]
+fn malformed_editor_request_does_not_mutate_or_stop_background() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    let before = std::fs::read(fake.runtime().join("effect.frag")).unwrap();
+    let mut stream = UnixStream::connect(fake.runtime().join("trial.sock")).unwrap();
+    stream.write_all(b"not JSON").unwrap();
+    stream.shutdown(std::net::Shutdown::Write).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    assert!(
+        serde_json::from_str::<Result<u64, String>>(&response)
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(process.send(Message::Heartbeat), "ok");
+    assert_eq!(
+        std::fs::read(fake.runtime().join("effect.frag")).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn failed_editor_mutation_exits_into_exact_recovery() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    *fake.failure.lock().unwrap() = Some(("debug:vfr".into(), true));
+    assert!(
+        recovery::request_trial(
+            &fake.runtime(),
+            &recovery::TrialRequest::Start {
+                shader: "trial".into()
+            }
+        )
+        .is_err()
+    );
+    assert!(!process.child.wait().unwrap().success());
+    fake.wait_original();
+}
+
+#[test]
+fn editor_traffic_cannot_renew_a_stalled_parents_lease() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    let started = Instant::now();
+    while process.child.try_wait().unwrap().is_none() {
+        // Invalid requests neither mutate nor count as a parent heartbeat.
+        let _ =
+            recovery::request_trial(&fake.runtime(), &recovery::TrialRequest::Cancel { id: 123 });
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "Editor kept dead parent lease alive"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    fake.wait_original();
+}
+
+#[test]
+fn unknown_journal_settings_are_retained_without_mutation() {
+    let fake = Fake::new();
+    recovery::stop(&fake.runtime()).unwrap();
+    let journal = serde_json::json!({
+        "socket": fake.socket,
+        "changes": [{"key":"unmanaged:option", "before":"a", "installed":"b"}],
+    });
+    std::fs::write(
+        fake.runtime().join("journal.json"),
+        serde_json::to_vec(&journal).unwrap(),
+    )
+    .unwrap();
+    assert!(recovery::stop(&fake.runtime()).is_err());
+    assert!(fake.original());
+    assert!(fake.runtime().join("journal.json").exists());
+}
+
+#[test]
+fn reset_cancels_the_trial_clears_background_intent_and_keeps_guardian_alive() {
+    use recovery::{TrialRequest, request_trial};
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    let id = request_trial(
+        &fake.runtime(),
+        &TrialRequest::Start {
+            shader: "trial".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(process.send(Message::Reset), "ok");
+    fake.wait_original();
+    assert_eq!(process.send(Message::Heartbeat), "ok");
+    request_trial(&fake.runtime(), &TrialRequest::Cancel { id }).unwrap();
+    assert!(
+        fake.original(),
+        "An old receipt must not reinstate pre-reset background state"
+    );
+    let replacement = request_trial(
+        &fake.runtime(),
+        &TrialRequest::Start {
+            shader: "new trial".into(),
+        },
+    )
+    .unwrap();
+    request_trial(&fake.runtime(), &TrialRequest::Cancel { id: replacement }).unwrap();
+    fake.wait_original();
+}
+
+#[test]
+fn reset_without_a_timer_uses_independent_guardian_recovery() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    let status =
+        signal_loss::control::execute(&fake.runtime(), signal_loss::control::Command::Reset)
+            .unwrap();
+    assert_eq!(status.state, signal_loss::control::State::Stopped);
+    fake.wait_original();
+    assert!(process.child.wait().unwrap().success());
 }

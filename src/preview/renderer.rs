@@ -1,5 +1,8 @@
 //! OpenGL interface adaptation only. All interference lives in signal.glsl.
-use crate::{artwork::Canvas, effect::Settings};
+use crate::{
+    artwork::Canvas,
+    effect::{Glitchiness, Settings},
+};
 use anyhow::{Result, bail, ensure};
 use eframe::{
     egui_glow::ShaderVersion,
@@ -14,14 +17,27 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(gl: &glow::Context, settings: &Settings, level: f32) -> Result<Self> {
-        let body = settings.shader_body(level)?;
+    pub fn new(gl: &glow::Context, settings: &Settings, level: Glitchiness) -> Result<Self> {
+        let body = settings.shader_body(level);
         let program = compile(gl, &body)?;
         // SAFETY: eframe's creation callback has made this GL context current. The
         // handles are kept with this renderer and deleted only in the exit callback.
         unsafe {
-            let vao = gl.create_vertex_array().map_err(anyhow::Error::msg)?;
-            let texture = gl.create_texture().map_err(anyhow::Error::msg)?;
+            let vao = match gl.create_vertex_array() {
+                Ok(vao) => vao,
+                Err(error) => {
+                    gl.delete_program(program);
+                    bail!(error);
+                }
+            };
+            let texture = match gl.create_texture() {
+                Ok(texture) => texture,
+                Err(error) => {
+                    gl.delete_vertex_array(vao);
+                    gl.delete_program(program);
+                    bail!(error);
+                }
+            };
             Ok(Self {
                 program,
                 vao,
@@ -31,8 +47,13 @@ impl Renderer {
         }
     }
 
-    pub fn update(&mut self, gl: &glow::Context, settings: &Settings, level: f32) -> Result<()> {
-        let body = settings.shader_body(level)?;
+    pub fn update(
+        &mut self,
+        gl: &glow::Context,
+        settings: &Settings,
+        level: Glitchiness,
+    ) -> Result<()> {
+        let body = settings.shader_body(level);
         if self.body != body {
             let program = compile(gl, &body)?;
             // SAFETY: called exclusively during a current-context paint callback.
@@ -78,12 +99,12 @@ impl Renderer {
                 glow::TEXTURE_2D,
                 0,
                 glow::RGBA as i32,
-                canvas.width as i32,
-                canvas.height as i32,
+                canvas.width() as i32,
+                canvas.height() as i32,
                 0,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(&canvas.rgba)),
+                glow::PixelUnpackData::Slice(Some(canvas.rgba())),
             );
             gl.uniform_1_i32(gl.get_uniform_location(self.program, "tex").as_ref(), 0);
             gl.uniform_1_f32(gl.get_uniform_location(self.program, "time").as_ref(), time);

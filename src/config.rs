@@ -4,6 +4,7 @@ use std::{
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
+    time::{Duration, Instant, SystemTime},
 };
 
 pub fn path() -> Result<PathBuf> {
@@ -19,49 +20,125 @@ pub fn path() -> Result<PathBuf> {
 }
 
 pub fn load(path: &Path) -> Result<Settings> {
+    load_version(path).map(|(settings, _)| settings)
+}
+
+fn load_version(path: &Path) -> Result<(Settings, Option<SystemTime>)> {
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(Settings::default());
+            return Ok((Settings::default(), None));
         }
         Err(error) => return Err(error.into()),
     };
+    let modified = file.metadata()?.modified().ok();
     let mut bytes = Vec::new();
     file.take(65537).read_to_end(&mut bytes)?;
     ensure!(bytes.len() <= 65536, "Settings file exceeds 64 KiB");
     let settings: Settings =
         serde_json::from_slice(&bytes).context("Invalid Signal Loss settings")?;
-    settings.validate()?;
-    Ok(settings)
+    Ok((settings, modified))
 }
 
 pub fn save(path: &Path, settings: &Settings) -> Result<()> {
-    settings.validate()?;
     let parent = path.parent().context("Missing config directory")?;
     fs::create_dir_all(parent)?;
-    let temporary = path.with_extension("json.new");
-    let mut file = File::create(&temporary)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
     serde_json::to_writer_pretty(&mut file, settings)?;
-    file.sync_all()?;
-    fs::rename(temporary, path)?;
+    file.as_file().sync_all()?;
+    file.persist(path)?;
     File::open(parent)?.sync_all()?;
     Ok(())
+}
+
+/// Polling settings reload owns its file version; work debt never lives here.
+pub(crate) struct LiveSettings {
+    path: PathBuf,
+    settings: Settings,
+    modified: Option<SystemTime>,
+    checked: Instant,
+}
+
+impl LiveSettings {
+    pub(crate) fn open(path: PathBuf) -> Result<Self> {
+        let (settings, modified) = load_version(&path)?;
+        Ok(Self {
+            path,
+            settings,
+            modified,
+            checked: Instant::now(),
+        })
+    }
+    pub(crate) fn current(&self) -> &Settings {
+        &self.settings
+    }
+    pub(crate) fn reload(&mut self, now: Instant) -> Result<bool> {
+        if now.duration_since(self.checked) < Duration::from_secs(1) {
+            return Ok(false);
+        }
+        self.checked = now;
+        let modified = fs::metadata(&self.path)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        if modified == self.modified {
+            return Ok(false);
+        }
+        let (settings, modified) = load_version(&self.path)?;
+        let changed = settings != self.settings;
+        self.settings = settings;
+        self.modified = modified;
+        Ok(changed)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    fn reload_publishes_valid_changes_and_keeps_last_good_settings_on_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        let mut live = LiveSettings::open(path.clone()).unwrap();
+        let first_poll = Instant::now() + Duration::from_secs(2);
+        let mut settings = Settings::default();
+        settings.set_curve(3.0).unwrap();
+        save(&path, &settings).unwrap();
+        assert!(live.reload(first_poll).unwrap());
+        assert_eq!(live.current(), &settings);
+        assert!(!live.reload(first_poll).unwrap());
+        // A malformed replacement must never get assigned to the live model.
+        fs::write(&path, "invalid").unwrap();
+        File::open(&path)
+            .unwrap()
+            .set_modified(SystemTime::now() + Duration::from_secs(10))
+            .unwrap();
+        assert!(live.reload(first_poll + Duration::from_secs(2)).is_err());
+        assert_eq!(live.current(), &settings);
+        fs::remove_file(&path).unwrap();
+        assert!(live.reload(first_poll + Duration::from_secs(4)).unwrap());
+        assert_eq!(live.current(), &Settings::default());
+    }
+
+    #[test]
+    fn oversized_settings_are_rejected_before_parsing() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        fs::write(&path, vec![b' '; 65537]).unwrap();
+        assert!(load(&path).unwrap_err().to_string().contains("64 KiB"));
+    }
+
+    #[test]
     fn save_reopen_and_invalid_settings() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config/settings.json");
         let mut s = load(&path).unwrap();
-        s.tears.enabled = false;
-        s.colour.entry = 32.5;
+        use crate::effect::{Effect, EffectKind};
+        s.set_effect(EffectKind::Tears, Effect::new(false, 5.0, 0.7).unwrap());
+        s.set_effect(EffectKind::Colour, Effect::new(true, 32.5, 0.65).unwrap());
         save(&path, &s).unwrap();
         let reopened = load(&path).unwrap();
-        assert!(!reopened.tears.enabled);
-        assert_eq!(reopened.colour.entry, 32.5);
+        assert!(!reopened.effect(EffectKind::Tears).enabled());
+        assert_eq!(reopened.effect(EffectKind::Colour).entry(), 32.5);
         fs::write(&path, "{\"curve\":0}").unwrap();
         assert!(load(&path).is_err());
     }

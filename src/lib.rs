@@ -1,15 +1,16 @@
+//! Signal Loss keeps break debt, interference tuning, and display ownership independent.
+//! The background and editor adapters publish intent; only the guardian mutates the desktop.
 #![deny(unsafe_code)]
 
 pub mod artwork;
 pub mod background;
-pub mod config;
-pub mod preview;
-// Glow calls are isolated here; each unsafe block documents current-context ownership.
-pub mod controller;
+mod clock;
+mod config;
+pub mod control;
+mod cycle;
 pub mod effect;
 pub mod hyprland;
+pub mod preview;
 pub mod recovery;
-#[allow(unsafe_code)]
-pub mod renderer;
 pub mod runtime;
 pub mod wayland;

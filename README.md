@@ -14,7 +14,10 @@ Copy the executable anywhere on your PATH; no installer, Python, Lua interpreter
 signal-loss doctor       # Non-mutating compositor/protocol capability check
 signal-loss              # Background operation; no control window
 signal-loss preview      # Tune, save, preview test card, or explicitly try the desktop for 5 s
-signal-loss stop         # Emergency stop, normal stop, or retry crash recovery
+signal-loss status       # One JSON timer snapshot, suitable for Waybar polling
+signal-loss pause        # Freeze work debt and clear effects
+signal-loss resume       # Continue with preserved debt
+signal-loss reset        # Fresh running interval; also the panic/recovery command
 ```
 
 Normal operation stays attached to the launching terminal. Start it through your existing session launcher/service if desired. Signal Loss does not install autostart entries or change compositor configuration.
@@ -22,6 +25,27 @@ Normal operation stays attached to the launching terminal. Start it through your
 The editor's slider accepts an exact numeric value from 0 to 100. Selecting 100 does **not** trigger the test card. Each effect has an independent toggle, entry level, and maximum strength. Settings are saved to `$XDG_CONFIG_HOME/signal-loss/settings.json` (normally `~/.config/signal-loss/settings.json`). Background operation reloads saved changes within one second without resetting work debt.
 
 A desktop trial requires confirmation, lasts five seconds, and restores the current background state. It also works while the background timer is running: the display guardian temporarily overrides the effect, while the controller continues counting normally. Closing the editor ends its trial; editor failure cannot extend it. Trial deadlines use boot time, so suspension does not extend a trial; locking cancels it.
+
+## Timer control and Waybar
+
+Poll `signal-loss status` (for example, once per second) from a Waybar plugin. It prints one JSON object and exits:
+
+```json
+{"state":"running","phase":"work","work_seconds":42,"remaining_seconds":1158,"break_remaining_seconds":300,"glitchiness":0.0}
+```
+
+- `state`: `running`, `paused`, `resting` (break completed, waiting for input), or `stopped` (no background timer).
+- `phase`: `work`, `grace`, or `overtime` (test card). It is `null` when stopped.
+- `work_seconds`: accumulated work debt, including grace/overtime, excluding manual pause time.
+- `remaining_seconds`: seconds until grace during work, until the test card during grace, or until break completion in overtime.
+- `break_remaining_seconds`: continuous inactivity still needed to complete a break.
+- `glitchiness`: grace-curve intensity from 0–100; zero while paused. This is timer intent, not a query of lock or editor-trial display state.
+
+All numeric countdown/debt fields are `null` when stopped. `pause`, `resume`, and `reset` also print the resulting status, after display changes have been applied. Errors go to stderr with a nonzero exit status; `status` with no timer is a successful `stopped` snapshot.
+
+Pause clears effects and preserves work debt. Paused time does not advance work or complete a break; resume starts fresh idle observation. Repeating pause or resume does not change debt. Reset always starts a fresh running work interval, even from pause or overtime, and cancels desktop trials.
+
+Reset replaces the former `stop` command. If the timer is absent or does not reply within two seconds, reset falls back to independent guardian shutdown and journal recovery. That fallback reports `stopped`, never launches a daemon, and still reports restoration conflicts as errors. Use Ctrl-C or SIGTERM to shut down a healthy background process completely.
 
 ## Host requirements
 
@@ -54,13 +78,13 @@ SIGNAL_LOSS_LIBRARY_PATH=/absolute/graphics/lib:/absolute/other/lib signal-loss 
 SIGNAL_LOSS_HYPRLAND_BINARY=/absolute/path/to/Hyprland signal-loss doctor
 ```
 
-`doctor` prints the effective library search paths. `stop` bypasses graphics discovery and validation so a broken graphics override cannot prevent emergency recovery. Standard display/session variables (`WAYLAND_DISPLAY`, `DISPLAY`, `XDG_RUNTIME_DIR`, `HYPRLAND_INSTANCE_SIGNATURE`) retain their normal meanings. No system configuration is installed or changed; Nix remains optional development/test tooling, not the deployment format.
+`doctor` prints the effective library search paths. Timer commands bypass graphics discovery and validation so a broken graphics override cannot prevent emergency recovery. Standard display/session variables (`WAYLAND_DISPLAY`, `DISPLAY`, `XDG_RUNTIME_DIR`, `HYPRLAND_INSTANCE_SIGNATURE`) retain their normal meanings. No system configuration is installed or changed; Nix remains optional development/test tooling, not the deployment format.
 
 ## Safety and recovery
 
-Interference is intentionally disruptive. The test card consumes ordinary input over every output; it is **not a security lock screen**. Compositor shortcuts remain available. Before ordinary use, arrange a way to run `signal-loss stop`, such as a compositor shortcut or another terminal/TTY.
+Interference is intentionally disruptive. The test card consumes ordinary input over every output; it is **not a security lock screen**. Compositor shortcuts remain available. Before ordinary use, arrange a way to run `signal-loss reset`, such as a compositor shortcut or another terminal/TTY.
 
-Configure a compositor shortcut to run `/absolute/path/to/signal-loss stop` if desired. Signal Loss does not add bindings itself. Do not use another shader manager to change the same settings during a trial or grace period.
+Configure a compositor shortcut to run `/absolute/path/to/signal-loss reset` if desired. Signal Loss does not add bindings itself. Do not use another shader manager to change the same settings during a trial or grace period.
 
 Recovery safeguards:
 
@@ -69,19 +93,31 @@ Recovery safeguards:
 - Exact previous shader path, damage tracking, and VFR values are journaled **before** mutation. Rendering overrides are enabled only during interference and removed for normal work/test cards. An existing user shader is restored, not replaced with a guessed default.
 - The guardian independently removes its effects/overlays when the session locks. The controller keeps its break debt.
 - Runtime files live in a private, instance-specific `$XDG_RUNTIME_DIR/signal-loss-<hash>/` directory. Required shaders, sample artwork, and fonts are embedded; only the temporary shader must be extracted for Hyprland.
-- If both the application and guardian are killed, run `signal-loss stop` in the same Hyprland session to recover from the retained journal. If the compositor is disconnected, retry after it is reachable.
+- If both the application and guardian are killed, run `signal-loss reset` in the same Hyprland session to recover from the retained journal. If the compositor is disconnected, retry after it is reachable.
 - A setting changed externally is left untouched. Recovery reports a conflict and keeps `journal.json` for inspection rather than overwriting the newer value. Resolve that conflict deliberately; do not delete the journal while Signal Loss still owns an active shader.
 
 Like any IPC-based tool, it cannot restore an unresponsive or dead compositor. If Hyprland itself is restarted, its new session/configuration owns the display; do not apply an old session's journal to a different compositor instance.
 
 ## Timing rules
 
-- Short pauses do not pause or erase work debt. Interference continues until a complete break or a security lock.
+- Short input-free pauses do not pause or erase work debt. Interference continues until a complete break or a security lock.
 - Inactivity already accumulated during grace counts toward the same five minutes on the test card.
 - After completing a break, staying idle cannot start another reminder. First resumed input starts the next 20-minute interval.
 - Input-idle is observed conservatively from application startup; standard Wayland does not expose pre-launch idle history. Observation has one-second granularity and never finishes a break early due to timestamp rounding. Input-seat topology changes conservatively restart observation rather than backdating inactivity.
 - Suspend counts as input-free time. Short suspend does not erase debt. Suspend is distinguished from an application stall using boot-time versus monotonic clocks.
 - Locking does not reset the cycle. Input-free lock time counts as a break; short lock periods retain debt. Effects never intentionally cover or distort the security lock screen.
+
+## Code structure
+
+- `src/cycle.rs`: work debt, continuous breaks, and grace/deadline transitions; no I/O.
+- `src/effect.rs`: validated glitchiness, grace curves, and effect tuning. `effect/shader.rs` adapts the shared GLSL.
+- `src/control.rs`: JSON timer commands and status; its private server owns the background control socket.
+- `src/background.rs`: clock/input observation and publication of display intent; no installation state.
+- `src/recovery/`: the guardian owns display state, trial precedence, and lock suppression. Process transport, editor trial ownership, and write-ahead recovery are private modules.
+- `src/wayland/`: input monitoring and software test cards have separate types and protocol state.
+- `src/preview/`: controls, shader scene/GL resources, and screenshot verification are separate from the editor lifecycle.
+
+Only the guardian mutates the desktop. Neither the break cycle nor the editor owns compositor installation or recovery policy.
 
 ## Build a deployable executable
 

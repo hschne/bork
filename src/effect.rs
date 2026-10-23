@@ -1,5 +1,9 @@
+//! Validated interference tuning. JSON and the editor cannot bypass range checks.
 use anyhow::{Context, Result, ensure};
+use serde::{Deserialize, Serialize};
 use std::io::Read;
+
+mod shader;
 
 /// One session seed, retained across tuning changes and shader recompilation.
 pub fn fresh_seed() -> Result<u32> {
@@ -9,38 +13,162 @@ pub fn fresh_seed() -> Result<u32> {
         .read_exact(&mut bytes)?;
     Ok(u32::from_ne_bytes(bytes))
 }
-use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Effect {
-    pub enabled: bool,
-    pub entry: f32,
-    pub maximum: f32,
+/// Spatial/burst intensity, independent of the break deadline and test-card state.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Glitchiness(f32);
+
+impl Glitchiness {
+    pub const ZERO: Self = Self(0.0);
+    pub const MAXIMUM: Self = Self(100.0);
+    pub fn value(self) -> f32 {
+        self.0
+    }
+    pub(crate) fn quantized(self) -> Self {
+        Self((self.0 * 2.0).floor() / 2.0)
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+impl TryFrom<f32> for Glitchiness {
+    type Error = anyhow::Error;
+    fn try_from(value: f32) -> Result<Self> {
+        ensure!(
+            value.is_finite() && (0.0..=100.0).contains(&value),
+            "Glitchiness must be 0–100"
+        );
+        Ok(Self(value))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f32")]
+pub struct GraceCurve(f32);
+
+impl Default for GraceCurve {
+    fn default() -> Self {
+        Self(2.0)
+    }
+}
+
+impl TryFrom<f32> for GraceCurve {
+    type Error = anyhow::Error;
+    fn try_from(value: f32) -> Result<Self> {
+        ensure!(
+            value.is_finite() && (1.01..=5.0).contains(&value),
+            "Curve must be 1.01–5"
+        );
+        Ok(Self(value))
+    }
+}
+
+impl GraceCurve {
+    pub fn value(self) -> f32 {
+        self.0
+    }
+    /// `progress` comes from the cycle's elapsed grace fraction (0..1).
+    pub(crate) fn level(self, progress: f32) -> Glitchiness {
+        Glitchiness(100.0 * progress.powf(self.0))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectKind {
+    Tears,
+    Colour,
+    Bands,
+    Noise,
+    Ghost,
+}
+
+impl EffectKind {
+    pub const ALL: [Self; 5] = [
+        Self::Tears,
+        Self::Colour,
+        Self::Bands,
+        Self::Noise,
+        Self::Ghost,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "EffectInput")]
+pub struct Effect {
+    enabled: bool,
+    entry: f32,
+    maximum: f32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EffectInput {
+    enabled: bool,
+    entry: f32,
+    maximum: f32,
+}
+
+impl TryFrom<EffectInput> for Effect {
+    type Error = anyhow::Error;
+    fn try_from(input: EffectInput) -> Result<Self> {
+        Self::new(input.enabled, input.entry, input.maximum)
+    }
+}
+
+impl Effect {
+    pub fn new(enabled: bool, entry: f32, maximum: f32) -> Result<Self> {
+        ensure!(
+            entry.is_finite() && (0.0..=99.0).contains(&entry),
+            "Entry must be 0–99"
+        );
+        ensure!(
+            maximum.is_finite() && (0.0..=1.0).contains(&maximum),
+            "Maximum must be 0–1"
+        );
+        Ok(Self {
+            enabled,
+            entry,
+            maximum,
+        })
+    }
+
+    pub fn enabled(self) -> bool {
+        self.enabled
+    }
+    pub fn entry(self) -> f32 {
+        self.entry
+    }
+    pub fn maximum(self) -> f32 {
+        self.maximum
+    }
+
+    pub fn strength(self, level: Glitchiness) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        let x = ((level.value() - self.entry) / (100.0 - self.entry)).clamp(0.0, 1.0);
+        self.maximum * x * x * (3.0 - 2.0 * x)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
-    pub curve: f32,
-    pub tears: Effect,
-    pub colour: Effect,
-    pub bands: Effect,
-    pub noise: Effect,
-    pub ghost: Effect,
+    curve: GraceCurve,
+    tears: Effect,
+    colour: Effect,
+    bands: Effect,
+    noise: Effect,
+    ghost: Effect,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        fn effect(entry: f32, maximum: f32) -> Effect {
-            Effect {
-                enabled: true,
-                entry,
-                maximum,
-            }
-        }
+        let effect = |entry, maximum| Effect {
+            enabled: true,
+            entry,
+            maximum,
+        };
         Self {
-            curve: 2.0,
+            curve: GraceCurve::default(),
             tears: effect(5.0, 0.7),
             colour: effect(15.0, 0.65),
             bands: effect(30.0, 0.8),
@@ -50,145 +178,42 @@ impl Default for Settings {
     }
 }
 
-impl Effect {
-    pub fn strength(&self, level: f32) -> f32 {
-        if !self.enabled || !level.is_finite() {
-            return 0.0;
-        }
-        let x = ((level - self.entry) / (100.0 - self.entry)).clamp(0.0, 1.0);
-        self.maximum * x * x * (3.0 - 2.0 * x)
-    }
-}
-
 impl Settings {
-    pub fn validate(&self) -> Result<()> {
-        ensure!(
-            self.curve.is_finite() && (1.01..=5.0).contains(&self.curve),
-            "Curve must be 1.01–5"
-        );
-        for e in [
-            &self.tears,
-            &self.colour,
-            &self.bands,
-            &self.noise,
-            &self.ghost,
-        ] {
-            ensure!(
-                e.entry.is_finite() && (0.0..=99.0).contains(&e.entry),
-                "Entry must be 0–99"
-            );
-            ensure!(
-                e.maximum.is_finite() && (0.0..=1.0).contains(&e.maximum),
-                "Maximum must be 0–1"
-            );
-        }
+    pub fn curve(&self) -> GraceCurve {
+        self.curve
+    }
+    pub fn set_curve(&mut self, curve: f32) -> Result<()> {
+        self.curve = curve.try_into()?;
         Ok(())
     }
 
-    /// Shared effect implementation; adapters supply sampleDesktop(), UVs, time and seed.
-    pub fn shader_body(&self, level: f32) -> Result<String> {
-        self.validate()?;
-        ensure!(
-            level.is_finite() && (0.0..=100.0).contains(&level),
-            "Glitchiness must be 0–100"
-        );
-        let normalized = level / 100.0;
-        Ok(format!(
-            "const float TEARS = {:.8};\nconst float COLOUR = {:.8};\nconst float BANDS = {:.8};\nconst float NOISE = {:.8};\nconst float GHOST = {:.8};\nconst float FREQUENCY = {:.8};\nconst float DURATION = {:.8};\n{}",
-            self.tears.strength(level),
-            self.colour.strength(level),
-            self.bands.strength(level),
-            self.noise.strength(level),
-            self.ghost.strength(level),
-            0.12 + 0.73 * normalized.powi(2),
-            0.08 + 1.02 * normalized.powf(1.2),
-            include_str!("signal.glsl")
-        ))
+    pub fn effect(&self, kind: EffectKind) -> Effect {
+        match kind {
+            EffectKind::Tears => self.tears,
+            EffectKind::Colour => self.colour,
+            EffectKind::Bands => self.bands,
+            EffectKind::Noise => self.noise,
+            EffectKind::Ghost => self.ghost,
+        }
     }
 
-    pub fn hyprland_shader(&self, level: f32) -> Result<String> {
-        self.hyprland_shader_at(level, 0.0, 0)
+    pub fn set_effect(&mut self, kind: EffectKind, effect: Effect) {
+        *match kind {
+            EffectKind::Tears => &mut self.tears,
+            EffectKind::Colour => &mut self.colour,
+            EffectKind::Bands => &mut self.bands,
+            EffectKind::Noise => &mut self.noise,
+            EffectKind::Ghost => &mut self.ghost,
+        } = effect;
     }
 
-    /// Preserve animation continuity when Hyprland resets its time uniform on reload.
-    pub fn hyprland_shader_at(&self, level: f32, elapsed: f32, seed: u32) -> Result<String> {
-        ensure!(
-            elapsed.is_finite() && elapsed >= 0.0,
-            "Invalid animation time"
-        );
-        Ok(format!(
-            "#version 300 es\nprecision highp float;\nprecision highp int;\nin vec2 v_texcoord;\nlayout(location = 0) out vec4 fragColor;\nuniform sampler2D tex;\nuniform float time;\nuniform int wl_output;\nvec4 sampleDesktop(vec2 uv) {{ return texture(tex, clamp(uv, 0.0, 1.0)); }}\n{}\nvoid main() {{ fragColor = signalLoss(v_texcoord, time + {elapsed:.4}, {seed}u ^ uint(wl_output)); }}\n",
-            self.shader_body(level)?
-        ))
+    /// Whether the current tuning produces visible interference at this level.
+    pub fn has_visible_effect_at(&self, level: Glitchiness) -> bool {
+        EffectKind::ALL
+            .into_iter()
+            .any(|kind| self.effect(kind).strength(level) > 0.0)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn actual_shader_constants_raise_burst_frequency_and_duration_separately() {
-        let settings = Settings::default();
-        let mut previous = [0.0, 0.0];
-        for level in 0..=100 {
-            let body = settings.shader_body(level as f32).unwrap();
-            let mut current = [0.0; 2];
-            for (i, name) in ["FREQUENCY", "DURATION"].iter().enumerate() {
-                let prefix = format!("const float {name} = ");
-                current[i] = body
-                    .lines()
-                    .find_map(|line| line.strip_prefix(&prefix))
-                    .unwrap()
-                    .trim_end_matches(';')
-                    .parse::<f32>()
-                    .unwrap();
-                assert!(current[i] >= previous[i]);
-            }
-            assert!(current[0] * current[1] > 0.0 && current[0] * current[1] < 1.0);
-            previous = current;
-        }
-        assert!((previous[0] - 0.85).abs() < 0.000001);
-        assert!((previous[1] - 1.1).abs() < 0.000001);
-    }
-
-    #[test]
-    fn seeded_adapter_preserves_time_and_monitor_identity() {
-        let settings = Settings::default();
-        let shader = settings.hyprland_shader_at(75.0, 123.5, u32::MAX).unwrap();
-        assert!(shader.contains("uniform int wl_output;"));
-        assert!(shader.contains("time + 123.5000, 4294967295u ^ uint(wl_output)"));
-        assert_eq!(
-            shader,
-            settings.hyprland_shader_at(75.0, 123.5, u32::MAX).unwrap()
-        );
-        assert_ne!(
-            shader,
-            settings.hyprland_shader_at(75.0, 123.5, 17).unwrap()
-        );
-        assert!(settings.hyprland_shader_at(75.0, f32::INFINITY, 0).is_err());
-        assert!(settings.hyprland_shader_at(75.0, -1.0, 0).is_err());
-        fresh_seed().unwrap();
-    }
-
-    #[test]
-    fn bounded_smooth_monotonic_and_toggle() {
-        let mut s = Settings::default();
-        s.validate().unwrap();
-        for e in [&s.tears, &s.colour, &s.bands, &s.noise, &s.ghost] {
-            let mut previous = 0.0;
-            for i in 0..=10000 {
-                let v = e.strength(i as f32 / 100.0);
-                assert!(v >= previous && v <= e.maximum);
-                previous = v;
-            }
-            assert_eq!(e.strength(e.entry), 0.0);
-            assert!(e.strength(e.entry + 0.001) < 0.000001);
-        }
-        s.tears.enabled = false;
-        assert_eq!(s.tears.strength(100.0), 0.0);
-        assert!(s.hyprland_shader(100.0).unwrap().contains("signalLoss"));
-        assert!(s.hyprland_shader(f32::NAN).is_err());
-        s.curve = f32::INFINITY;
-        assert!(s.validate().is_err());
-    }
-}
+mod tests;

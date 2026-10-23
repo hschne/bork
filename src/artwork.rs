@@ -2,21 +2,37 @@
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 
 pub struct Canvas {
-    pub width: usize,
-    pub height: usize,
-    pub rgba: Vec<u8>,
+    width: usize,
+    height: usize,
+    rgba: Vec<u8>,
 }
 
 impl Canvas {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn width(&self) -> usize {
+        self.width
+    }
+    pub fn height(&self) -> usize {
+        self.height
+    }
+    pub fn rgba(&self) -> &[u8] {
+        &self.rgba
+    }
+
+    fn new(width: usize, height: usize) -> Self {
         Self {
             width,
             height,
-            rgba: vec![0; width * height * 4],
+            rgba: vec![
+                0;
+                width
+                    .checked_mul(height)
+                    .and_then(|pixels| pixels.checked_mul(4))
+                    .expect("Canvas dimensions fit address space")
+            ],
         }
     }
 
-    pub fn rect(&mut self, x: usize, y: usize, w: usize, h: usize, colour: [u8; 3]) {
+    fn rect(&mut self, x: usize, y: usize, w: usize, h: usize, colour: [u8; 3]) {
         for y in y..y.saturating_add(h).min(self.height) {
             for x in x..x.saturating_add(w).min(self.width) {
                 let i = (y * self.width + x) * 4;
@@ -26,7 +42,7 @@ impl Canvas {
         }
     }
 
-    pub fn text(&mut self, text: &str, x: usize, y: usize, scale: usize, colour: [u8; 3]) {
+    fn text(&mut self, text: &str, x: usize, y: usize, scale: usize, colour: [u8; 3]) {
         for (i, ch) in text.chars().enumerate() {
             if let Some(glyph) = BASIC_FONTS.get(ch) {
                 for (row, bits) in glyph.iter().enumerate() {

@@ -2,7 +2,11 @@
 mod support;
 
 use signal_loss::{
-    artwork, effect::Settings, hyprland::Hyprland, recovery::Message, wayland::Wayland,
+    artwork,
+    effect::{Glitchiness, Settings},
+    hyprland::Hyprland,
+    recovery::{DisplayState, Message},
+    wayland::InputMonitor,
 };
 use std::{
     fs::{self, File},
@@ -28,7 +32,7 @@ fn isolated() -> PathBuf {
     path
 }
 
-fn pump(wayland: &mut Wayland, duration: Duration) {
+fn pump(wayland: &mut InputMonitor, duration: Duration) {
     let deadline = Instant::now() + duration;
     while Instant::now() < deadline {
         wayland.dispatch().unwrap();
@@ -73,7 +77,7 @@ impl Guardian {
         )
         .arg("guardian")
         .arg(runtime)
-        .arg(hypr.socket)
+        .arg(hypr.socket_path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -105,6 +109,13 @@ impl Guardian {
         if !matches!(message, Message::Heartbeat) {
             println!("Guardian request acknowledged");
         }
+    }
+    fn trial(&mut self, shader: String) {
+        signal_loss::recovery::request_trial(
+            &Hyprland::from_env().unwrap().runtime_directory().unwrap(),
+            &signal_loss::recovery::TrialRequest::Start { shader },
+        )
+        .unwrap();
     }
     fn heartbeat_for(&mut self, duration: Duration) {
         let deadline = Instant::now() + duration;
@@ -155,7 +166,9 @@ fn compositor_shader_overlay_and_crash_recovery() {
         target.state.keys > 0 && target.state.clicks > 0,
         "Disposable target must receive input before overlay"
     );
-    let original = Settings::default().hyprland_shader(0.0).unwrap();
+    let original = Settings::default()
+        .hyprland_shader(Glitchiness::try_from(0.0).unwrap())
+        .unwrap();
     fs::write(runtime.join("prior.frag"), original).unwrap();
     hypr.set(
         "decoration:screen_shader",
@@ -181,10 +194,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
     println!("Guardian ready");
     verify_randomness(&mut owner);
     for level in [10.0, 50.0, 100.0] {
-        owner.send(Message::Install {
-            shader: Settings::default().hyprland_shader(level).unwrap(),
-            trial: false,
-        });
+        owner.send(Message::Display(DisplayState::Interference {
+            shader: Settings::default()
+                .hyprland_shader(Glitchiness::try_from(level).unwrap())
+                .unwrap(),
+        }));
         owner.heartbeat_for(Duration::from_millis(250));
         let start = graphics_counters();
         owner.heartbeat_for(Duration::from_millis(500));
@@ -195,7 +209,7 @@ fn compositor_shader_overlay_and_crash_recovery() {
         );
         capture(&format!("desktop-level-{level:.0}.png"), "");
     }
-    owner.send(Message::TestCard { remaining: 272 });
+    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
     owner.heartbeat_for(Duration::from_millis(250));
     let start = graphics_counters();
     owner.heartbeat_for(Duration::from_millis(500));
@@ -224,7 +238,7 @@ fn compositor_shader_overlay_and_crash_recovery() {
             let e = (y * 1280 + x) * 4;
             assert_eq!(
                 &bytes[i..i + 3],
-                &expected.rgba[e..e + 3],
+                &expected.rgba()[e..e + 3],
                 "Output {output}, point {x},{y}"
             );
         }
@@ -255,32 +269,32 @@ fn compositor_shader_overlay_and_crash_recovery() {
     println!("Real compositor setting restoration and overlay removal after EOF passed.");
 
     println!("Connecting idle monitor");
-    let mut monitor = Wayland::connect(false, 300).unwrap();
+    let mut monitor = InputMonitor::connect().unwrap();
     println!("Idle monitor connected");
     pump(&mut monitor, Duration::from_millis(1300));
     assert!(
-        monitor.activity().1.is_some(),
+        monitor.activity().idle_since.is_some(),
         "Input idle was not reported"
     );
     println!("Real input-idle received despite visible surface's media idle inhibitor.");
     target.key();
     pump(&mut monitor, Duration::from_millis(100));
     assert!(
-        monitor.activity().0,
+        monitor.activity().resumed,
         "Keyboard did not interrupt inactivity"
     );
     pump(&mut monitor, Duration::from_millis(1200));
-    assert!(monitor.activity().1.is_some());
+    assert!(monitor.activity().idle_since.is_some());
     target.motion();
     pump(&mut monitor, Duration::from_millis(100));
     assert!(
-        monitor.activity().0,
+        monitor.activity().resumed,
         "Pointer motion alone did not interrupt inactivity"
     );
     println!("Keyboard and pointer-only interruption verified.");
 
     let mut owner = Guardian::start();
-    owner.send(Message::TestCard { remaining: 272 });
+    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
     configure_output(&hypr, "proof-two,1280x720@30,1280x0,1.6,transform,1");
     owner.heartbeat_for(Duration::from_millis(500));
     assert_card(&capture("overlay-rotated-scaled.png", "proof-two"));
@@ -302,10 +316,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
         .map(|(key, _)| (key.clone(), hypr.get(key).unwrap()))
         .collect();
     let mut owner = Guardian::start();
-    owner.send(Message::Install {
-        shader: Settings::default().hyprland_shader(100.0).unwrap(),
-        trial: true,
-    });
+    owner.trial(
+        Settings::default()
+            .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
+            .unwrap(),
+    );
     owner.heartbeat_for(Duration::from_millis(5300));
     for (key, value) in &before_trial {
         assert_eq!(hypr.get(key).unwrap(), *value);
@@ -314,10 +329,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
     println!("Five-second real-compositor trial expired and restored exact settings.");
 
     let mut owner = Guardian::start();
-    owner.send(Message::Install {
-        shader: Settings::default().hyprland_shader(100.0).unwrap(),
-        trial: false,
-    });
+    owner.send(Message::Display(DisplayState::Interference {
+        shader: Settings::default()
+            .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
+            .unwrap(),
+    }));
     let session = target.lock();
     assert!(hypr.locked().unwrap());
     owner.heartbeat_for(Duration::from_millis(400));
@@ -327,13 +343,15 @@ fn compositor_shader_overlay_and_crash_recovery() {
     assert!(
         signal_loss::recovery::DesktopTrial::start(
             &hypr,
-            Settings::default().hyprland_shader(50.0).unwrap()
+            Settings::default()
+                .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
+                .unwrap()
         )
         .is_err()
     );
     target.unlock(session);
     assert!(!hypr.locked().unwrap());
-    owner.send(Message::TestCard { remaining: 272 });
+    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
     owner.heartbeat_for(Duration::from_millis(200));
     let session = target.lock();
     owner.heartbeat_for(Duration::from_millis(400));
@@ -352,11 +370,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
     let app = std::env::var_os("SIGNAL_LOSS_TEST_BINARY")
         .unwrap_or_else(|| env!("CARGO_BIN_EXE_signal-loss").into());
     let mut owner = Guardian::start();
-    owner.send(Message::TestCard { remaining: 272 });
+    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
     owner.heartbeat_for(Duration::from_millis(200));
-    assert!(Command::new(&app).arg("stop").status().unwrap().success());
+    assert!(Command::new(&app).arg("reset").status().unwrap().success());
     drop(owner);
-    println!("Public emergency stop released real overlay.");
+    println!("Public emergency reset released real overlay.");
 
     let clients_before = hypr.json("clients").unwrap().as_array().unwrap().len();
     let mut background = Command::new(&app)
@@ -392,7 +410,9 @@ fn compositor_shader_overlay_and_crash_recovery() {
     );
     let mut trial = signal_loss::recovery::DesktopTrial::start(
         &hypr,
-        Settings::default().hyprland_shader(100.0).unwrap(),
+        Settings::default()
+            .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
+            .unwrap(),
     )
     .unwrap();
     let deadline = Instant::now() + Duration::from_millis(5300);
@@ -410,7 +430,9 @@ fn compositor_shader_overlay_and_crash_recovery() {
     }
     let trial = signal_loss::recovery::DesktopTrial::start(
         &hypr,
-        Settings::default().hyprland_shader(50.0).unwrap(),
+        Settings::default()
+            .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
+            .unwrap(),
     )
     .unwrap();
     trial.finish().unwrap();
@@ -422,14 +444,48 @@ fn compositor_shader_overlay_and_crash_recovery() {
         assert_eq!(hypr.get(key).unwrap(), *value);
     }
     println!("Editor trials borrow background owner, expire/cancel, and leave controller running.");
-    assert!(Command::new(&app).arg("stop").status().unwrap().success());
+    for (action, expected) in [
+        ("pause", "paused"),
+        ("resume", "running"),
+        ("reset", "running"),
+    ] {
+        let result = Command::new(&app).arg(action).output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let status: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(status["state"], expected);
+        if action == "reset" {
+            assert_eq!(status["phase"], "work");
+            assert_eq!(status["work_seconds"], 0);
+        }
+        assert!(
+            background.try_wait().unwrap().is_none(),
+            "Timer command terminated background"
+        );
+    }
+    // Reset is no longer shutdown. Terminate only this fixture-owned background.
+    assert!(
+        Command::new("/bin/sh")
+            .args([
+                "-c",
+                "kill -TERM \"$1\"",
+                "owned-background",
+                &background.id().to_string()
+            ])
+            .status()
+            .unwrap()
+            .success()
+    );
     let result = background.wait_with_output().unwrap();
     assert!(
         result.status.success(),
-        "Background stop failed: {}",
+        "Background shutdown failed: {}",
         String::from_utf8_lossy(&result.stderr)
     );
-    println!("Windowless background startup and clean public stop passed.");
+    println!("Windowless background status/control, reset, and SIGTERM shutdown passed.");
 
     let background = Command::new(&app)
         .stdout(Stdio::null())
@@ -448,7 +504,9 @@ fn compositor_shader_overlay_and_crash_recovery() {
     }
     let trial = signal_loss::recovery::DesktopTrial::start(
         &hypr,
-        Settings::default().hyprland_shader(100.0).unwrap(),
+        Settings::default()
+            .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
+            .unwrap(),
     )
     .unwrap();
     let parent = background.id();
@@ -483,7 +541,7 @@ fn verify_randomness(owner: &mut Guardian) {
     // and its monitor/session seed wiring; only substitute time and final colour.
     let probe = |seed| {
         Settings::default()
-            .hyprland_shader_at(100.0, 0.0, seed)
+            .hyprland_shader_at(Glitchiness::MAXIMUM, 0.0, seed)
             .unwrap()
             .replace(
                 "seconds = max(seconds, 0.0);",
@@ -494,10 +552,9 @@ fn verify_randomness(owner: &mut Guardian) {
                 "return vec4(tearsBurst, bandsBurst, noiseBurst, 1.0);",
             )
     };
-    owner.send(Message::Install {
+    owner.send(Message::Display(DisplayState::Interference {
         shader: probe(41),
-        trial: false,
-    });
+    }));
     owner.heartbeat_for(Duration::from_millis(100));
     let (width, height, first) = image(&capture("randomness-monitor-one.png", "proof-one"));
     let (other_width, other_height, second) =
@@ -534,14 +591,18 @@ fn verify_randomness(owner: &mut Guardian) {
         "Burst timing/duration is too regular: starts={}, gaps={gaps:?}, lengths={lengths:?}",
         starts.len()
     );
-    owner.send(Message::Update { shader: probe(42) });
+    owner.send(Message::Display(DisplayState::Interference {
+        shader: probe(42),
+    }));
     owner.heartbeat_for(Duration::from_millis(100));
     let (_, _, changed) = image(&capture("randomness-new-session.png", "proof-one"));
     assert!(
         differences(&tears, &row(&changed, 0)) > width / 8,
         "Session seed does not change the sequence"
     );
-    owner.send(Message::Update { shader: probe(41) });
+    owner.send(Message::Display(DisplayState::Interference {
+        shader: probe(41),
+    }));
     owner.heartbeat_for(Duration::from_millis(100));
     let (_, _, repeated) = image(&capture("randomness-recompiled.png", "proof-one"));
     assert_eq!(
@@ -570,7 +631,7 @@ fn assert_card(path: &std::path::Path) {
         let e = (y * w + x) * 4;
         assert_eq!(
             &bytes[i..i + 3],
-            &expected.rgba[e..e + 3],
+            &expected.rgba()[e..e + 3],
             "Test card missing at {x},{y} on {}",
             path.display()
         );

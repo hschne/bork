@@ -8,6 +8,9 @@ A playful but hard-to-ignore break reminder for Hyprland on Linux. It distorts t
 - Five continuous minutes without keyboard **or mouse** input completes a break. Reading and watching count; media idle inhibitors must not prevent a break.
 - Inactivity accumulated before the test card counts toward the same five minutes. Short pauses retain work debt. After a completed break, resumed input starts the next work interval.
 - Locking suppresses effects without resetting debt. Input-free suspend and lock time count toward a break. Observe startup and input-seat changes conservatively rather than inventing prior inactivity.
+- Manual pause freezes work debt and clears effects; resume retains debt but starts fresh idle observation. Paused time does not advance work or complete a break.
+- Reset starts a fresh running interval even from pause or overtime, clears effects, and cancels desktop trials. If the timer is absent or unresponsive, reset performs independent display recovery without launching a background process. It replaces emergency stop.
+- Provide machine-readable timer status for bar integrations without initializing graphics; acknowledge timer commands only after applying display changes.
 - Glitchiness is continuous from 0 to 100, separate from the deadline/test-card state. Selecting 100 in the editor must not trigger a test card.
 
 ## Effects and editor
@@ -21,7 +24,7 @@ A playful but hard-to-ignore break reminder for Hyprland on Linux. It distorts t
 
 ## Implementation boundaries
 
-- One Rust executable provides windowless background operation, the editor, capability diagnostics, emergency stop, and an internal guardian process. Embed required shaders, artwork, and fonts. Temporary runtime files are allowed.
+- One Rust executable provides windowless background operation, the editor, capability diagnostics, timer control and panic recovery, and an internal guardian process. Embed required shaders, artwork, and fonts. Temporary runtime files are allowed.
 - Use Hyprland's screen shader through direct IPC, not desktop capture, a plugin, or a `hyprctl` subprocess. Do not require an external scripting interpreter.
 - The break controller owns timing and transitions independently of rendering. The effect model maps glitchiness to shader behaviour. Display integration owns installation, overlays, restoration, and recovery.
 - Use standard Wayland input-idle v2 notifications, ignoring media inhibitors; no global keyboard capture or input-device permissions.
@@ -34,7 +37,7 @@ A playful but hard-to-ignore break reminder for Hyprland on Linux. It distorts t
 - A separate invocation of the same executable owns display mutations and recovers independently of main-process exit handlers, including parent EOF and missed heartbeats.
 - Journal exact prior shader and rendering settings before mutation. Restore only values still owned by Signal Loss; preserve newer external changes and retain unresolved journals for retry.
 - Locking independently removes effects and overlays. Trial deadlines use boot time so suspension cannot extend them.
-- Emergency stop must remain usable with broken graphics overrides. Compositor disconnection/conflicts are recoverable errors, not permission to guess replacement settings.
+- Emergency reset must remain usable with broken graphics overrides. Compositor disconnection/conflicts are recoverable errors, not permission to guess replacement settings.
 
 ## Visual reference and scope
 

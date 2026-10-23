@@ -109,7 +109,7 @@ impl Desktop {
         assert!(state.configured);
         let image = signal_loss::artwork::desktop();
         let mut file = tempfile::tempfile().unwrap();
-        for pixel in image.rgba.chunks_exact(4) {
+        for pixel in image.rgba().chunks_exact(4) {
             let colour = (255u32 << 24)
                 | ((pixel[0] as u32) << 16)
                 | ((pixel[1] as u32) << 8)
@@ -117,7 +117,7 @@ impl Desktop {
             file.write_all(&colour.to_ne_bytes()).unwrap();
         }
         file.seek(SeekFrom::Start(0)).unwrap();
-        let pool = shm.create_pool(file.as_fd(), image.rgba.len() as i32, &qh, ());
+        let pool = shm.create_pool(file.as_fd(), image.rgba().len() as i32, &qh, ());
         let buffer = pool.create_buffer(0, 1280, 720, 1280 * 4, wl_shm::Format::Argb8888, &qh, ());
         state.buffer = Some(buffer.clone());
         surface.attach(Some(&buffer), 0, 0);

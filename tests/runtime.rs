@@ -56,10 +56,10 @@ fn override_precedes_inherited_paths_and_reexec_preserves_command() {
 }
 
 #[test]
-fn emergency_stop_ignores_broken_graphics_configuration() {
+fn emergency_reset_ignores_broken_graphics_configuration() {
     let runtime = tempfile::tempdir().unwrap();
     let output = command()
-        .arg("stop")
+        .arg("reset")
         .env("XDG_RUNTIME_DIR", runtime.path())
         .env("HYPRLAND_INSTANCE_SIGNATURE", "fixture-instance")
         .env("SIGNAL_LOSS_NIX_DISCOVERY", "invalid")

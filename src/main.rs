@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use signal_loss::{hyprland::Hyprland, recovery};
+use signal_loss::{control, hyprland::Hyprland, recovery};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -20,20 +20,24 @@ enum Action {
     Doctor,
     /// Open the shader tuning editor; ordinary desktop settings remain unchanged.
     Preview,
-    /// Stop the display owner and restore its exact previous settings.
-    Stop,
+    /// Print the background timer status as one JSON object.
+    Status,
+    /// Freeze work debt and remove interference/test cards.
+    Pause,
+    /// Continue the paused timer with its preserved work debt.
+    Resume,
+    /// Start a fresh running interval and clear effects; also performs emergency recovery.
+    Reset,
     #[command(hide = true)]
     Guardian { runtime: PathBuf, socket: PathBuf },
 }
 
-fn runtime() -> Result<PathBuf> {
-    let hypr = Hyprland::from_env()?;
-    hypr.runtime_directory()
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    if !matches!(&cli.command, Some(Action::Stop)) {
+    if matches!(
+        &cli.command,
+        None | Some(Action::Doctor | Action::Preview | Action::Guardian { .. })
+    ) {
         signal_loss::runtime::bootstrap()?;
     }
     match cli.command {
@@ -42,15 +46,25 @@ fn main() -> Result<()> {
             let hypr = Hyprland::from_env()?;
             let version = hypr.check()?;
             println!("Hyprland IPC and shader/redraw options available.\n{version}");
-            let _wayland = signal_loss::wayland::Wayland::connect(false, 300)?;
+            signal_loss::wayland::check()?;
             println!(
                 "Wayland input-idle v2, layer-shell, shm, and input seat available. No display settings changed."
             );
             Ok(())
         }
         Some(Action::Preview) => signal_loss::preview::open(),
-        Some(Action::Stop) => recovery::stop(&runtime()?),
+        Some(Action::Status) => timer(control::Command::Status),
+        Some(Action::Pause) => timer(control::Command::Pause),
+        Some(Action::Resume) => timer(control::Command::Resume),
+        Some(Action::Reset) => timer(control::Command::Reset),
         Some(Action::Guardian { runtime, socket }) => recovery::run_guardian(&runtime, socket),
         None => signal_loss::background::run(),
     }
+}
+
+fn timer(command: control::Command) -> Result<()> {
+    let status = control::execute(&Hyprland::from_env()?.runtime_directory()?, command)?;
+    serde_json::to_writer(std::io::stdout().lock(), &status)?;
+    println!();
+    Ok(())
 }
