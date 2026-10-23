@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signal loss — break shader storyboard</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111312;
+        --ink: #eeeae0;
+        --muted: #a4aaa1;
+        --line: #343a32;
+        --accent: #d4e6a2;
+        font-family: system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      main {
+        max-inline-size: 1500px;
+        margin: auto;
+        padding: 42px clamp(20px, 4vw, 64px);
+      }
+      .skip {
+        position: absolute;
+        top: -100%;
+      }
+      .skip:focus {
+        top: 0;
+      }
+      header {
+        display: flex;
+        gap: 24px;
+        justify-content: space-between;
+        align-items: end;
+        margin-block-end: 32px;
+      }
+      .eyebrow {
+        font: 12px monospace;
+        letter-spacing: 0.15em;
+        color: var(--accent);
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: clamp(32px, 4vw, 55px);
+        font-weight: 500;
+        letter-spacing: -0.055em;
+        margin: 12px 0;
+      }
+      header p {
+        max-inline-size: 520px;
+        color: var(--muted);
+        line-height: 1.6;
+        margin: 0;
+      }
+      .tag {
+        font: 12px monospace;
+        border: 1px solid var(--line);
+        padding: 10px 14px;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 32px 24px;
+      }
+      figure {
+        margin: 0;
+        min-inline-size: 0;
+      }
+      figure button {
+        display: block;
+        padding: 0;
+        border: 1px solid #42483e;
+        background: #080909;
+        cursor: zoom-in;
+        inline-size: 100%;
+        position: relative;
+      }
+      button:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 5px;
+      }
+      canvas {
+        display: block;
+        inline-size: 100%;
+        aspect-ratio: 16/9;
+      }
+      figcaption {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 16px;
+        padding-block-start: 16px;
+      }
+      .number {
+        font: 13px monospace;
+        color: var(--accent);
+        padding-block-start: 5px;
+      }
+      h2 {
+        font-size: 19px;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        margin: 0 0 7px;
+      }
+      .time {
+        float: right;
+        color: var(--muted);
+        font: 11px monospace;
+        padding: 5px 0 5px 12px;
+      }
+      figcaption p {
+        color: var(--muted);
+        line-height: 1.5;
+        font-size: 13px;
+        margin: 0;
+        max-inline-size: 560px;
+      }
+      .rules {
+        margin-block-start: 38px;
+        padding-block: 22px;
+        border-block: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+      }
+      .rules p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .rules strong {
+        color: var(--ink);
+        font-weight: 500;
+      }
+      .foot {
+        font: 11px monospace;
+        color: var(--muted);
+        line-height: 1.6;
+        margin-block-start: 18px;
+      }
+      dialog {
+        max-inline-size: 96vw;
+        inline-size: 1400px;
+        background: var(--bg);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        padding: 16px;
+      }
+      dialog::backdrop {
+        background: #000d;
+      }
+      dialog header {
+        margin-block-end: 14px;
+        align-items: center;
+      }
+      dialog h2 {
+        margin: 0;
+      }
+      dialog button {
+        background: none;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        padding: 8px 14px;
+        cursor: pointer;
+      }
+      dialog canvas {
+        max-block-size: 80svh;
+        object-fit: contain;
+      }
+      dialog p {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      @media (max-width: 760px) {
+        header {
+          display: block;
+        }
+        .tag {
+          display: inline-block;
+          margin-block-start: 18px;
+        }
+        .grid,
+        .rules {
+          grid-template-columns: 1fr;
+        }
+        .time {
+          float: none;
+          display: block;
+          padding: 0 0 6px;
+        }
+        main {
+          padding-block-start: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to storyboard</a>
+    <main id="main">
+      <header>
+        <div>
+          <div class="eyebrow">Hyprland / proposed screen shader</div>
+          <h1>Your signal is slipping.</h1>
+          <p>
+            Three minutes to finish the thought. Then the station goes off
+            air.<br />Four frozen frames of the same desktop. Click any frame to
+            inspect.
+          </p>
+        </div>
+        <span class="tag">STATIC STORYBOARD · NO FLASHING</span>
+      </header>
+      <section class="grid" aria-label="Four stages of escalating interference">
+        <figure>
+          <button
+            type="button"
+            data-stage="0"
+            aria-label="Enlarge minute one: a warning in the signal"
+          >
+            <canvas
+              width="1280"
+              height="720"
+              id="stage0"
+              role="img"
+              aria-label="Readable coding desktop with slight colour separation and two thin displaced bands"
+            ></canvas>
+          </button>
+          <figcaption>
+            <span class="number">01</span>
+            <div>
+              <span class="time">20:00–21:00 WORKING</span>
+              <h2>A warning in the signal.</h2>
+              <p>
+                A few narrow tears. Tiny cyan/red offsets. Mostly a normal
+                desktop, interrupted by brief, widely spaced glitches.
+              </p>
+            </div>
+          </figcaption>
+        </figure>
+        <figure>
+          <button
+            type="button"
+            data-stage="1"
+            aria-label="Enlarge minute two: the connection is unstable"
+          >
+            <canvas
+              width="1280"
+              height="720"
+              id="stage1"
+              role="img"
+              aria-label="Same desktop with larger displaced bands, doubled text and coloured interference"
+            ></canvas>
+          </button>
+          <figcaption>
+            <span class="number">02</span>
+            <div>
+              <span class="time">21:00–22:00 WORKING</span>
+              <h2>The connection is unstable.</h2>
+              <p>
+                Wider horizontal slips, RGB ghosting, intermittent static. Still
+                usable, but the signal keeps breaking your concentration.
+              </p>
+            </div>
+          </figcaption>
+        </figure>
+        <figure>
+          <button
+            type="button"
+            data-stage="2"
+            aria-label="Enlarge minute three: losing the picture"
+          >
+            <canvas
+              width="1280"
+              height="720"
+              id="stage2"
+              role="img"
+              aria-label="Coding desktop heavily fragmented into horizontal bands with colour drift, noise and signal lost text"
+            ></canvas>
+          </button>
+          <figcaption>
+            <span class="number">03</span>
+            <div>
+              <span class="time">22:00–23:00 WORKING</span>
+              <h2>Losing the picture.</h2>
+              <p>
+                Deep band displacement and desynchronised colour. Longer
+                interference, less clean signal. A last chance to stop
+                voluntarily.
+              </p>
+            </div>
+          </figcaption>
+        </figure>
+        <figure>
+          <button
+            type="button"
+            data-stage="3"
+            aria-label="Enlarge test screen: take a break"
+          >
+            <canvas
+              width="1280"
+              height="720"
+              id="stage3"
+              role="img"
+              aria-label="TV colour-bar test card with Take a break, five minute keyboard break, and a sample inactivity countdown"
+            ></canvas>
+          </button>
+          <figcaption>
+            <span class="number">04</span>
+            <div>
+              <span class="time">23:00 ONWARD</span>
+              <h2>Off air. Back in five.</h2>
+              <p>
+                A steady test card, not a flashing punishment. Five minutes
+                without typing restores the desktop. Reading or watching
+                something counts.
+              </p>
+            </div>
+          </figcaption>
+        </figure>
+      </section>
+      <section class="rules" aria-label="Proposed break rules">
+        <p>
+          <strong>20 min work → 3 min grace → test card.</strong><br />The frame
+          shows an interference burst, not constant distortion throughout each
+          minute. Frequency and duration would rise with intensity.
+        </p>
+        <p>
+          <strong>5 continuous minutes without typing = break complete.</strong
+          ><br />Time already spent not typing counts, including on the test
+          card. Mouse activity alone would not reset the break.
+        </p>
+      </section>
+      <p class="foot">
+        VISUAL PROPOSAL, NOT A RUNNING HYPRLAND SHADER. No actual desktop
+        capture or keyboard monitoring. Keyboard-only detection needs separate
+        validation; ordinary Wayland idle detection also includes pointer
+        activity.
+      </p>
+      <dialog aria-labelledby="detail-title">
+        <header>
+          <h2 id="detail-title">Stage preview</h2>
+          <button type="button" id="close">Close · Esc</button>
+        </header>
+        <canvas
+          width="1280"
+          height="720"
+          id="detail"
+          role="img"
+          aria-label="Enlarged selected storyboard frame"
+        ></canvas>
+        <p id="detail-description"></p>
+      </dialog>
+    </main>
+    <script type="module">
+      const W = 1280;
+      const H = 720;
+      const base = document.createElement("canvas");
+      base.width = W;
+      base.height = H;
+      const ctx = base.getContext("2d");
+      const rect = (context, x, y, width, height, color) => {
+        context.fillStyle = color;
+        context.fillRect(x, y, width, height);
+      };
+      const text = (
+        context,
+        value,
+        x,
+        y,
+        color = "#c9d1df",
+        size = 18,
+        font = "monospace",
+      ) => {
+        context.fillStyle = color;
+        context.font = `${size}px ${font}`;
+        context.fillText(value, x, y);
+      };
+      rect(ctx, 0, 0, W, H, "#172328");
+      for (let i = 0; i < 9; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, H);
+        ctx.bezierCurveTo(
+          220,
+          580 - i * 35,
+          650,
+          770 - i * 70,
+          W,
+          150 + i * 30,
+        );
+        ctx.lineTo(W, H);
+        ctx.fillStyle = `rgba(96,135,132,${0.025 + i * 0.007})`;
+        ctx.fill();
+      }
+      rect(ctx, 12, 10, 1256, 31, "#0e171c");
+      text(ctx, "1   2   3   4   5", 30, 31, "#8797a4", 14);
+      rect(ctx, 23, 36, 12, 2, "#abd5b6");
+      text(ctx, "nixfiles / main", 555, 31, "#c7cfca", 14);
+      text(ctx, "wifi   vol 42%   14:20", 1040, 31, "#a8bab8", 14);
+      rect(ctx, 20, 56, 795, 642, "#10151e");
+      rect(ctx, 20, 56, 795, 34, "#202a36");
+      text(ctx, "nvim   hosts/rocinante/default.nix", 37, 79, "#c6d4e2", 15);
+      rect(ctx, 20, 90, 172, 580, "#151c27");
+      text(ctx, "EXPLORER", 37, 119, "#74849c", 13);
+      const files = [
+        "nixfiles",
+        "  hosts/",
+        "    rocinante/",
+        "    default.nix",
+        "  modules/",
+        "  home/",
+        "  flake.nix",
+        "  flake.lock",
+      ];
+      files.forEach((line, index) =>
+        text(
+          ctx,
+          line,
+          32,
+          156 + index * 28,
+          index === 3 ? "#b5d8a6" : "#8492aa",
+          15,
+        ),
+      );
+      const code = [
+        "{ config, pkgs, ... }:",
+        "",
+        "{",
+        "  imports = [",
+        "    ./hardware-configuration.nix",
+        "    ../../modules/desktop",
+        "  ];",
+        "",
+        '  networking.hostName = "rocinante";',
+        "",
+        "  programs.hyprland = {",
+        "    enable = true;",
+        "    xwayland.enable = true;",
+        "  };",
+        "",
+        "  services.pipewire = {",
+        "    enable = true;",
+        "    pulse.enable = true;",
+        "  };",
+        "",
+        '  system.stateVersion = "25.05";',
+        "}",
+      ];
+      code.forEach((line, index) => {
+        text(
+          ctx,
+          String(index + 1).padStart(2),
+          205,
+          119 + index * 24,
+          "#48546a",
+          15,
+        );
+        let color = "#bbc8d7";
+        if (line.includes("true")) color = "#c4a4e3";
+        if (line.includes('"')) color = "#a6ce99";
+        text(ctx, line, 245, 119 + index * 24, color, 16);
+      });
+      rect(ctx, 245, 352, 10, 20, "#adc7a3");
+      rect(ctx, 20, 670, 795, 28, "#263843");
+      text(
+        ctx,
+        " NORMAL   main                         nix   utf-8   12:1",
+        34,
+        690,
+        "#bdd1d1",
+        14,
+      );
+      rect(ctx, 831, 56, 429, 292, "#111822");
+      rect(ctx, 831, 56, 429, 34, "#202a36");
+      text(ctx, "foot  ~/Source/nixfiles", 846, 79, "#c6d4e2", 15);
+      const terminal = [
+        "$ nix flake check",
+        "evaluating flake…",
+        "checking NixOS configuration",
+        "checking home configuration",
+        "",
+        "✓ checks passed",
+        "",
+        "$ git diff --stat",
+        " hosts/rocinante/default.nix",
+        " 1 file changed, 4 insertions(+)",
+        "",
+        "$ _",
+      ];
+      terminal.forEach((line, index) =>
+        text(
+          ctx,
+          line,
+          848,
+          114 + index * 19,
+          line.includes("✓") ? "#a6ce99" : "#94a8bd",
+          14,
+        ),
+      );
+      rect(ctx, 831, 364, 429, 334, "#e7e4d9");
+      rect(ctx, 831, 364, 429, 34, "#cecfc6");
+      text(ctx, "notes.md — reading", 846, 387, "#49544f", 14);
+      text(ctx, "A quieter desktop.", 858, 449, "#283b36", 29, "sans-serif");
+      const reading = [
+        "The best tools disappear until",
+        "you need them. A good environment",
+        "leaves room to finish a thought.",
+        "",
+        "Small defaults. Fewer interruptions.",
+        "Time to look away.",
+      ];
+      reading.forEach((line, index) =>
+        text(ctx, line, 858, 491 + index * 25, "#59645e", 17, "sans-serif"),
+      );
+      const canvases = [...document.querySelectorAll("figure canvas")];
+      const shiftedPixels = (target, amount) => {
+        const context = target.getContext("2d");
+        const original = ctx.getImageData(0, 0, W, H);
+        const output = context.createImageData(W, H);
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const offset = (y * W + x) * 4;
+            output.data[offset] =
+              original.data[(y * W + Math.min(W - 1, x + amount)) * 4];
+            output.data[offset + 1] = original.data[offset + 1];
+            output.data[offset + 2] =
+              original.data[(y * W + Math.max(0, x - amount)) * 4 + 2];
+            output.data[offset + 3] = 255;
+          }
+        }
+        context.putImageData(output, 0, 0);
+      };
+      const bands = [
+        [
+          [183, 3, 13],
+          [502, 5, -9],
+          [615, 2, 18],
+        ],
+        [
+          [118, 7, 35],
+          [229, 18, -42],
+          [328, 6, 60],
+          [421, 28, 24],
+          [554, 12, -31],
+          [647, 5, 44],
+        ],
+        [
+          [65, 24, 88],
+          [131, 33, -96],
+          [207, 17, 135],
+          [267, 59, -68],
+          [354, 28, 90],
+          [409, 66, -124],
+          [509, 38, 153],
+          [580, 53, -63],
+          [671, 21, 105],
+        ],
+      ];
+      for (let stage = 0; stage < 3; stage++) {
+        const canvas = canvases[stage];
+        const context = canvas.getContext("2d");
+        shiftedPixels(canvas, [1, 4, 11][stage]);
+        const snapshot = document.createElement("canvas");
+        snapshot.width = W;
+        snapshot.height = H;
+        snapshot.getContext("2d").drawImage(canvas, 0, 0);
+        for (const [y, height, shift] of bands[stage]) {
+          context.drawImage(snapshot, 0, y, W, height, shift, y, W, height);
+          rect(
+            context,
+            0,
+            y,
+            W,
+            1,
+            ["#83d6cf55", "#b5d3df99", "#e8d4e5bb"][stage],
+          );
+        }
+        for (let y = 0; y < H; y += 3)
+          rect(context, 0, y, W, 1, `rgba(0,0,0,${0.06 + stage * 0.035})`);
+        let seed = 2026;
+        const random = () => {
+          seed = (seed * 16807) % 2147483647;
+          return seed / 2147483647;
+        };
+        for (let i = 0; i < [90, 450, 2400][stage]; i++) {
+          const y = Math.floor(random() * H);
+          rect(
+            context,
+            random() * W,
+            y,
+            random() * (stage + 1) * 24 + 1,
+            1,
+            `rgba(194,222,220,${random() * 0.4})`,
+          );
+        }
+        if (stage === 1) rect(context, 770, 232, 190, 3, "#df71bb88");
+        if (stage === 2) {
+          rect(context, 0, 326, W, 13, "#080c10");
+          rect(context, 0, 558, W, 8, "#8cbdbf70");
+          rect(context, 870, 95, 351, 49, "#090e14e8");
+          text(context, "SIGNAL DEGRADING", 891, 128, "#e1e6d6", 24);
+          text(context, "SIGNAL DEGRADING", 895, 129, "#e4748a77", 24);
+        }
+      }
+      const test = canvases[3].getContext("2d");
+      const colors = [
+        "#c5c5bc",
+        "#c1b953",
+        "#64b5b9",
+        "#71a779",
+        "#a374a5",
+        "#ad6269",
+        "#526c9f",
+      ];
+      colors.forEach((color, index) =>
+        rect(test, (index * W) / 7, 0, W / 7 + 1, 494, color),
+      );
+      [
+        "#526c9f",
+        "#191d1d",
+        "#a374a5",
+        "#191d1d",
+        "#64b5b9",
+        "#191d1d",
+        "#c5c5bc",
+      ].forEach((color, index) =>
+        rect(test, (index * W) / 7, 494, W / 7 + 1, 58, color),
+      );
+      rect(test, 0, 552, W, 168, "#111718");
+      rect(test, 0, 552, 225, 168, "#18313c");
+      rect(test, 225, 552, 245, 168, "#c5c5bc");
+      rect(test, 470, 552, 200, 168, "#352643");
+      for (let x = 870; x < W; x += 26) rect(test, x, 552, 13, 168, "#282d2b");
+      rect(test, 222, 194, 836, 281, "#111718");
+      rect(test, 242, 213, 796, 1, "#788075");
+      test.textAlign = "center";
+      text(test, "TRANSMISSION PAUSED", 640, 253, "#b1bea6", 17);
+      text(test, "TAKE A BREAK", 640, 334, "#eeeee2", 69);
+      text(test, "NO TYPING. JUST BE HERE.", 640, 382, "#b7c0b2", 19);
+      text(test, "04:32  /  05:00", 640, 433, "#d9e8b2", 26);
+      rect(test, 426, 450, 428, 3, "#3f493b");
+      rect(test, 426, 450, 40, 3, "#d9e8b2");
+      text(test, "ROCiNANTE  /  REST CHANNEL", 640, 645, "#dddcd0", 16);
+      for (let y = 0; y < H; y += 3) rect(test, 0, y, W, 1, "#00000016");
+      const dialog = document.querySelector("dialog");
+      for (const button of document.querySelectorAll("[data-stage]")) {
+        button.addEventListener("click", () => {
+          const figure = button.closest("figure");
+          const stage = Number(button.dataset.stage);
+          document.querySelector("#detail-title").textContent =
+            figure.querySelector("h2").textContent;
+          document.querySelector("#detail-description").textContent =
+            figure.querySelector("figcaption p").textContent;
+          document
+            .querySelector("#detail")
+            .getContext("2d")
+            .drawImage(canvases[stage], 0, 0);
+          dialog.showModal();
+        });
+      }
+      document
+        .querySelector("#close")
+        .addEventListener("click", () => dialog.close());
+    </script>
+  </body>
+</html>

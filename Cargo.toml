@@ -1,0 +1,32 @@
+[package]
+name = "signal-loss"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "An escalating visual break reminder for Hyprland"
+publish = false
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ctrlc = { version = "3", features = ["termination"] }
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+font8x8 = "0.3"
+smithay-client-toolkit = { version = "0.20", default-features = false }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+rustix = { version = "1", features = ["event", "time"] }
+png = "0.18"
+object = { version = "0.37.3", default-features = false, features = ["read_core", "elf", "std"] }
+eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+
+[dev-dependencies]
+tempfile = "3"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+
+[profile.release]
+lto = "thin"
+strip = true
