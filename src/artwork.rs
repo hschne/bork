@@ -18,6 +18,35 @@ impl Canvas {
         &self.rgba
     }
 
+    /// Nearest-scale directly into a tightly packed Wayland ARGB8888 buffer.
+    pub(crate) fn write_argb_scaled(&self, width: usize, height: usize, output: &mut [u8]) {
+        assert!(width > 0 && height > 0);
+        let stride = width.checked_mul(4).expect("Row fits address space");
+        let length = stride
+            .checked_mul(height)
+            .expect("Image fits address space");
+        // SCTK slots may have alignment padding after the last row.
+        let output = &mut output[..length];
+        for y in 0..height {
+            let source_y = y * self.height / height;
+            let offset = y * stride;
+            if y > 0 && source_y == (y - 1) * self.height / height {
+                output.copy_within(offset - stride..offset, offset);
+                continue;
+            }
+            let source = &self.rgba[source_y * self.width * 4..][..self.width * 4];
+            for (x, pixel) in output[offset..offset + stride]
+                .chunks_exact_mut(4)
+                .enumerate()
+            {
+                let i = (x * self.width / width) * 4;
+                let colour =
+                    u32::from_be_bytes([source[i + 3], source[i], source[i + 1], source[i + 2]]);
+                pixel.copy_from_slice(&colour.to_ne_bytes());
+            }
+        }
+    }
+
     fn new(width: usize, height: usize) -> Self {
         Self {
             width,
@@ -33,12 +62,20 @@ impl Canvas {
     }
 
     fn rect(&mut self, x: usize, y: usize, w: usize, h: usize, colour: [u8; 3]) {
-        for y in y..y.saturating_add(h).min(self.height) {
-            for x in x..x.saturating_add(w).min(self.width) {
-                let i = (y * self.width + x) * 4;
-                self.rgba[i..i + 3].copy_from_slice(&colour);
-                self.rgba[i + 3] = 255;
-            }
+        let right = x.saturating_add(w).min(self.width);
+        let bottom = y.saturating_add(h).min(self.height);
+        if x >= right || y >= bottom {
+            return;
+        }
+        let start = (y * self.width + x) * 4;
+        let length = (right - x) * 4;
+        let pixel = [colour[0], colour[1], colour[2], 255];
+        for destination in self.rgba[start..start + length].chunks_exact_mut(4) {
+            destination.copy_from_slice(&pixel);
+        }
+        for row in y + 1..bottom {
+            self.rgba
+                .copy_within(start..start + length, (row * self.width + x) * 4);
         }
     }
 
@@ -256,4 +293,62 @@ pub fn test_card(width: usize, height: usize, remaining: u64) -> Canvas {
         }
     }
     scaled
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rectangles_match_per_pixel_drawing_including_clipping() {
+        let mut canvas = Canvas::new(37, 29);
+        let mut expected = vec![0; 37 * 29 * 4];
+        for (index, (x, y, w, h)) in [
+            (0, 0, 37, 29),
+            (5, 4, 7, 11),
+            (35, 27, 20, 20),
+            (100, 3, 5, 4),
+            (1, 100, 4, 6),
+            (0, 0, 0, 10),
+            (0, 0, 10, 0),
+            (36, 28, usize::MAX, usize::MAX),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let colour = [index as u8, 23, 42];
+            canvas.rect(x, y, w, h, colour);
+            for row in y..y.saturating_add(h).min(29) {
+                for column in x..x.saturating_add(w).min(37) {
+                    let offset = (row * 37 + column) * 4;
+                    expected[offset..offset + 4]
+                        .copy_from_slice(&[colour[0], colour[1], colour[2], 255]);
+                }
+            }
+            assert_eq!(canvas.rgba(), expected);
+        }
+    }
+
+    #[test]
+    fn direct_argb_scaling_matches_rgba_card_at_varied_sizes() {
+        for (width, height) in [(1, 1), (127, 73), (1280, 720), (1921, 1081)] {
+            for remaining in [0, 137, 300] {
+                let native = test_card(1280, 720, remaining);
+                let expected = test_card(width, height, remaining);
+                let length = width * height * 4;
+                let mut output = vec![0xa5; length + 60];
+                native.write_argb_scaled(width, height, &mut output);
+                assert!(output[length..].iter().all(|byte| *byte == 0xa5));
+                for (argb, rgba) in output[..length]
+                    .chunks_exact(4)
+                    .zip(expected.rgba().chunks_exact(4))
+                {
+                    assert_eq!(
+                        u32::from_ne_bytes(argb.try_into().unwrap()),
+                        u32::from_be_bytes([rgba[3], rgba[0], rgba[1], rgba[2]])
+                    );
+                }
+            }
+        }
+    }
 }

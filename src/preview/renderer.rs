@@ -3,6 +3,8 @@ use crate::{
     artwork::Canvas,
     effect::{Glitchiness, Settings},
 };
+use std::sync::Arc;
+
 use anyhow::{Result, bail, ensure};
 use eframe::{
     egui_glow::ShaderVersion,
@@ -11,9 +13,15 @@ use eframe::{
 
 pub struct Renderer {
     program: glow::Program,
+    tex_uniform: Option<glow::UniformLocation>,
+    time_uniform: Option<glow::UniformLocation>,
+    seed_uniform: Option<glow::UniformLocation>,
     vao: glow::VertexArray,
     texture: glow::Texture,
     body: String,
+    settings: Settings,
+    level: Glitchiness,
+    canvas: Option<Arc<Canvas>>,
 }
 
 impl Renderer {
@@ -40,9 +48,15 @@ impl Renderer {
             };
             Ok(Self {
                 program,
+                tex_uniform: gl.get_uniform_location(program, "tex"),
+                time_uniform: gl.get_uniform_location(program, "time"),
+                seed_uniform: gl.get_uniform_location(program, "run_seed"),
                 vao,
                 texture,
                 body,
+                settings: settings.clone(),
+                level,
+                canvas: None,
             })
         }
     }
@@ -53,20 +67,28 @@ impl Renderer {
         settings: &Settings,
         level: Glitchiness,
     ) -> Result<()> {
+        if self.settings == *settings && self.level == level {
+            return Ok(());
+        }
         let body = settings.shader_body(level);
         if self.body != body {
             let program = compile(gl, &body)?;
             // SAFETY: called exclusively during a current-context paint callback.
             unsafe {
                 gl.delete_program(self.program);
+                self.tex_uniform = gl.get_uniform_location(program, "tex");
+                self.time_uniform = gl.get_uniform_location(program, "time");
+                self.seed_uniform = gl.get_uniform_location(program, "run_seed");
             }
             self.program = program;
             self.body = body;
         }
+        self.settings = settings.clone();
+        self.level = level;
         Ok(())
     }
 
-    pub fn paint(&self, gl: &glow::Context, canvas: &Canvas, time: f32, seed: u32) {
+    pub fn paint(&mut self, gl: &glow::Context, canvas: &Arc<Canvas>, time: f32, seed: u32) {
         // SAFETY: called only from egui's GL paint callback, on the context's thread.
         // Canvas owns width*height*4 initialized bytes; no user-supplied raw pointers.
         // gl_VertexID needs no vertex buffers. All used handles belong to this context.
@@ -75,43 +97,49 @@ impl Renderer {
             gl.bind_vertex_array(Some(self.vao));
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MIN_FILTER,
-                glow::LINEAR as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_MAG_FILTER,
-                glow::LINEAR as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_WRAP_S,
-                glow::CLAMP_TO_EDGE as i32,
-            );
-            gl.tex_parameter_i32(
-                glow::TEXTURE_2D,
-                glow::TEXTURE_WRAP_T,
-                glow::CLAMP_TO_EDGE as i32,
-            );
-            gl.tex_image_2d(
-                glow::TEXTURE_2D,
-                0,
-                glow::RGBA as i32,
-                canvas.width() as i32,
-                canvas.height() as i32,
-                0,
-                glow::RGBA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(canvas.rgba())),
-            );
-            gl.uniform_1_i32(gl.get_uniform_location(self.program, "tex").as_ref(), 0);
-            gl.uniform_1_f32(gl.get_uniform_location(self.program, "time").as_ref(), time);
-            gl.uniform_1_u32(
-                gl.get_uniform_location(self.program, "run_seed").as_ref(),
-                seed,
-            );
+            // Keep the uploaded canvas alive so pointer identity cannot be recycled.
+            // Canvas is immutable; only switching desktop/card requires another upload.
+            if !self
+                .canvas
+                .as_ref()
+                .is_some_and(|uploaded| Arc::ptr_eq(uploaded, canvas))
+            {
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MIN_FILTER,
+                    glow::LINEAR as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MAG_FILTER,
+                    glow::LINEAR as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_WRAP_S,
+                    glow::CLAMP_TO_EDGE as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_WRAP_T,
+                    glow::CLAMP_TO_EDGE as i32,
+                );
+                gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA as i32,
+                    canvas.width() as i32,
+                    canvas.height() as i32,
+                    0,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(Some(canvas.rgba())),
+                );
+                self.canvas = Some(Arc::clone(canvas));
+            }
+            gl.uniform_1_i32(self.tex_uniform.as_ref(), 0);
+            gl.uniform_1_f32(self.time_uniform.as_ref(), time);
+            gl.uniform_1_u32(self.seed_uniform.as_ref(), seed);
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
             gl.bind_vertex_array(None);
             gl.bind_texture(glow::TEXTURE_2D, None);

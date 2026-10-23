@@ -137,7 +137,12 @@ impl eframe::App for Preview {
             self.test_card,
             self.settings.effect(EffectKind::Tears).enabled(),
         );
-        ctx.request_repaint_after(Duration::from_millis(33));
+        if !self.test_card && self.settings.has_visible_effect_at(self.level) {
+            ctx.request_repaint_after(Duration::from_millis(33));
+        } else if self.trial.is_some() {
+            // Static scenes need only maintain the owned guardian's lease/status.
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
     }
 
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {

@@ -28,5 +28,5 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 
 [profile.release]
-lto = "thin"
+lto = "fat"
 strip = true

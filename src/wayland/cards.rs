@@ -174,20 +174,14 @@ impl State {
             width > 0 && height > 0 && u64::from(width) * u64::from(height) <= 33_554_432,
             "Unsupported output dimensions {width}x{height}"
         );
-        let image = artwork::test_card(width as usize, height as usize, self.remaining);
+        let image = artwork::test_card(1280, 720, self.remaining);
         let (buffer, canvas) = self.pool.create_buffer(
             width as i32,
             height as i32,
             width as i32 * 4,
             wl_shm::Format::Argb8888,
         )?;
-        for (pixel, rgba) in canvas.chunks_exact_mut(4).zip(image.rgba().chunks_exact(4)) {
-            let colour = (255u32 << 24)
-                | ((rgba[0] as u32) << 16)
-                | ((rgba[1] as u32) << 8)
-                | rgba[2] as u32;
-            pixel.copy_from_slice(&colour.to_ne_bytes());
-        }
+        image.write_argb_scaled(width as usize, height as usize, canvas);
         card.layer.wl_surface().set_buffer_scale(card.scale);
         card.layer
             .wl_surface()
