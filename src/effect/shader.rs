@@ -35,7 +35,7 @@ impl Settings {
             "Invalid animation time"
         );
         Ok(format!(
-            "#version 300 es\nprecision highp float;\nprecision highp int;\nin vec2 v_texcoord;\nlayout(location = 0) out vec4 fragColor;\nuniform sampler2D tex;\nuniform float time;\nuniform int wl_output;\nvec4 sampleDesktop(vec2 uv) {{ return texture(tex, clamp(uv, 0.0, 1.0)); }}\n{}\nvoid main() {{ fragColor = signalLoss(v_texcoord, time + {elapsed:.4}, {seed}u ^ uint(wl_output)); }}\n",
+            "#version 300 es\nprecision highp float;\nprecision highp int;\nin vec2 v_texcoord;\nlayout(location = 0) out vec4 fragColor;\nuniform sampler2D tex;\nuniform float time;\nuniform int wl_output;\nvec4 sampleDesktop(vec2 uv) {{ return texture(tex, clamp(uv, 0.0, 1.0)); }}\n{}\nvoid main() {{ fragColor = bork(v_texcoord, time + {elapsed:.4}, {seed}u ^ uint(wl_output)); }}\n",
             self.shader_body(level)
         ))
     }

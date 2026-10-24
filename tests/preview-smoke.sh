@@ -26,9 +26,9 @@ function main() {
   export DISPLAY HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" LIBGL_ALWAYS_SOFTWARE=1
   unset WAYLAND_DISPLAY
   for mode in default maximum test-card reopened; do
-    SIGNAL_LOSS_TEST_CAPTURE="$output/preview-$mode.png" timeout 15 "$app" preview >"$output/preview-$mode.log" 2>&1 &
+    BORK_TEST_CAPTURE="$output/preview-$mode.png" timeout 15 "$app" preview >"$output/preview-$mode.log" 2>&1 &
     app_pid=$!
-    window="$(timeout 8 xdotool search --sync --onlyvisible --name 'Signal Loss')"
+    window="$(timeout 8 xdotool search --sync --onlyvisible --name 'Bork')"
     xdotool windowfocus --sync "$window"
     if [[ "$mode" == maximum ]]; then
       xdotool mousemove --window "$window" 215 169 click --repeat 2 --delay 100 1
@@ -49,9 +49,9 @@ function main() {
     if [[ "$mode" == test-card ]]; then grep -q '"test_card": true' "$output/preview-$mode.json" || die "Card toggle failed"; fi
     if [[ "$mode" == reopened ]]; then grep -q '"tears_enabled": false' "$output/preview-$mode.json" || die "Saved toggle was not reopened"; fi
   done
-  [[ -f "$scratch/config/signal-loss/settings.json" ]] || die "Save did not create settings"
-  grep -q '"enabled": false' "$scratch/config/signal-loss/settings.json" || die "Toggle was not saved"
-  cp "$scratch/config/signal-loss/settings.json" "$output/preview-saved-settings.json"
+  [[ -f "$scratch/config/bork/settings.json" ]] || die "Save did not create settings"
+  grep -q '"enabled": false' "$scratch/config/bork/settings.json" || die "Toggle was not saved"
+  cp "$scratch/config/bork/settings.json" "$output/preview-saved-settings.json"
   "$app" --version >"$output/version.txt"
   echo "Preview default, maximum, test card, save and reopen passed in isolated Xvfb."
 }

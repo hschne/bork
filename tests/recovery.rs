@@ -1,5 +1,5 @@
 //! Process + Unix-socket simulation. These tests never connect to the user's compositor.
-use signal_loss::{
+use bork::{
     effect::{Glitchiness, Settings},
     recovery::{self, DisplayState, Message},
 };
@@ -115,7 +115,7 @@ impl Fake {
     }
 
     fn runtime(&self) -> PathBuf {
-        self.dir.path().join("signal-loss")
+        self.dir.path().join("bork")
     }
 
     fn original(&self) -> bool {
@@ -154,7 +154,7 @@ struct Process {
 
 impl Process {
     fn start(fake: &Fake) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_signal-loss"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_bork"))
             .arg("guardian")
             .arg(fake.runtime())
             .arg(&fake.socket)
@@ -302,7 +302,7 @@ fn second_owner_is_rejected_without_touching_existing_state() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
-    let result = Command::new(env!("CARGO_BIN_EXE_signal-loss"))
+    let result = Command::new(env!("CARGO_BIN_EXE_bork"))
         .arg("guardian")
         .arg(fake.runtime())
         .arg(&fake.socket)
@@ -650,10 +650,8 @@ fn reset_without_a_timer_uses_independent_guardian_recovery() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
-    let status =
-        signal_loss::control::execute(&fake.runtime(), signal_loss::control::Command::Reset)
-            .unwrap();
-    assert_eq!(status.state, signal_loss::control::State::Stopped);
+    let status = bork::control::execute(&fake.runtime(), bork::control::Command::Reset).unwrap();
+    assert_eq!(status.state, bork::control::State::Stopped);
     fake.wait_original();
     assert!(process.child.wait().unwrap().success());
 }

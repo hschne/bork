@@ -1,5 +1,5 @@
 {
-  description = "Signal Loss development and isolated graphics verification";
+  description = "Bork development and isolated graphics verification";
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   outputs = { nixpkgs, ... }:
     let
@@ -28,7 +28,7 @@
             packages = with pkgs; [ pkg-config xorg-server xdotool ] ++ graphics;
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath graphics}:/run/opengl-driver/lib";
             shellHook = ''
-              echo "Signal Loss: use mise run check; mise run release. No desktop settings changed."
+              echo "Bork: use mise run check; mise run release. No desktop settings changed."
             '';
           };
         });

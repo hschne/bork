@@ -152,6 +152,8 @@ impl Effect {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
+    #[serde(default)]
+    pub timing: crate::cycle::Timing,
     curve: GraceCurve,
     tears: Effect,
     colour: Effect,
@@ -168,6 +170,7 @@ impl Default for Settings {
             maximum,
         };
         Self {
+            timing: crate::cycle::Timing::default(),
             curve: GraceCurve::default(),
             tears: effect(5.0, 0.7),
             colour: effect(15.0, 0.65),

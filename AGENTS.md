@@ -1,4 +1,4 @@
-# Signal Loss
+# Bork
 
 For implementation, read `.agents/SPEC.md`; its assets are the visual reference. `README.md` owns build/run commands, host requirements, and operational caveats.
 

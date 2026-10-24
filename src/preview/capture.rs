@@ -14,7 +14,7 @@ pub(super) struct Capture {
 impl Capture {
     pub(super) fn new() -> Self {
         Self {
-            path: std::env::var_os("SIGNAL_LOSS_TEST_CAPTURE").map(PathBuf::from),
+            path: std::env::var_os("BORK_TEST_CAPTURE").map(PathBuf::from),
             started: Instant::now(),
             requested: false,
         }

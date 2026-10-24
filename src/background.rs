@@ -40,17 +40,14 @@ pub fn run() -> Result<()> {
             if settings.reload(Instant::now())? {
                 published = None;
             }
+            cycle.set_timing(settings.current().timing);
+            let locked = hypr.locked()?;
             let clock = ClockSample::now();
             let now = clock.seconds();
             cycle.observe_suspend(now, clock.suspended_since(&previous_clock));
             previous_clock = clock;
             let activity = input.activity();
-            if activity.resumed {
-                cycle.observe_activity(now);
-            }
-            if let Some(since) = activity.idle_since {
-                cycle.observe_idle_since(since);
-            }
+            cycle.observe_input(now, locked, activity.resumed, activity.idle_since);
 
             let pending = controls.poll()?;
             let action = (|| -> Result<Status> {

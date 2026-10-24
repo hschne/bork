@@ -11,7 +11,7 @@ use std::{
     process::Command,
 };
 
-const READY: &str = "_SIGNAL_LOSS_RUNTIME_READY";
+const READY: &str = "_BORK_RUNTIME_READY";
 const LIBRARIES: &[&str] = &[
     "libwayland-client.so.0",
     "libwayland-cursor.so.0",
@@ -32,7 +32,7 @@ pub fn bootstrap() -> Result<()> {
     if env::var_os(READY).is_some() {
         return Ok(());
     }
-    let automatic = match env::var("SIGNAL_LOSS_NIX_DISCOVERY").as_deref() {
+    let automatic = match env::var("BORK_NIX_DISCOVERY").as_deref() {
         Ok("0") => false,
         Ok("1") => true,
         Ok("auto") | Err(_) => {
@@ -42,14 +42,14 @@ pub fn bootstrap() -> Result<()> {
                         .any(|line| line == "ID=nixos" || line == "ID=\"nixos\"")
                 })
         }
-        Ok(value) => bail!("SIGNAL_LOSS_NIX_DISCOVERY must be auto, 0, or 1, not {value:?}"),
+        Ok(value) => bail!("BORK_NIX_DISCOVERY must be auto, 0, or 1, not {value:?}"),
     };
     let mut paths = Vec::new();
-    if let Some(value) = env::var_os("SIGNAL_LOSS_LIBRARY_PATH") {
+    if let Some(value) = env::var_os("BORK_LIBRARY_PATH") {
         for path in env::split_paths(&value).filter(|path| !path.as_os_str().is_empty()) {
             ensure!(
                 path.is_absolute() && path.is_dir(),
-                "SIGNAL_LOSS_LIBRARY_PATH must contain existing absolute directories: {}",
+                "BORK_LIBRARY_PATH must contain existing absolute directories: {}",
                 path.display()
             );
             paths.push(path);
@@ -59,18 +59,18 @@ pub fn bootstrap() -> Result<()> {
         paths.extend(env::split_paths(&value).filter(|path| !path.as_os_str().is_empty()));
     }
     if automatic {
-        if let Some(binary) = env::var_os("SIGNAL_LOSS_HYPRLAND_BINARY") {
+        if let Some(binary) = env::var_os("BORK_HYPRLAND_BINARY") {
             let binary = PathBuf::from(binary);
             ensure!(
                 binary.is_absolute() && binary.is_file(),
-                "SIGNAL_LOSS_HYPRLAND_BINARY must name an existing absolute executable path"
+                "BORK_HYPRLAND_BINARY must name an existing absolute executable path"
             );
         }
         if let Some(binary) = hyprland_binary() {
             match discover(&binary) {
                 Ok(found) => paths.extend(found),
-                Err(error) if env::var_os("SIGNAL_LOSS_HYPRLAND_BINARY").is_some() => {
-                    return Err(error.context("Cannot inspect SIGNAL_LOSS_HYPRLAND_BINARY"));
+                Err(error) if env::var_os("BORK_HYPRLAND_BINARY").is_some() => {
+                    return Err(error.context("Cannot inspect BORK_HYPRLAND_BINARY"));
                 }
                 Err(_) => (), // Explicit paths remain usable when no readable compositor ELF exists.
             }
@@ -95,7 +95,7 @@ pub fn bootstrap() -> Result<()> {
         .env("LD_LIBRARY_PATH", joined)
         .env(READY, "1")
         .exec();
-    Err(error).context("Restarting Signal Loss with graphics-library paths")
+    Err(error).context("Restarting Bork with graphics-library paths")
 }
 
 pub fn describe() {
@@ -111,7 +111,7 @@ pub fn describe() {
 }
 
 fn hyprland_binary() -> Option<PathBuf> {
-    let configured = env::var_os("SIGNAL_LOSS_HYPRLAND_BINARY");
+    let configured = env::var_os("BORK_HYPRLAND_BINARY");
     let candidate = configured
         .map(PathBuf::from)
         .or_else(|| {

@@ -65,7 +65,7 @@ impl Hyprland {
             .fold(0xcbf29ce484222325u64, |hash, byte| {
                 (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
             });
-        Ok(root.join(format!("signal-loss-{hash:016x}")))
+        Ok(root.join(format!("bork-{hash:016x}")))
     }
 
     pub fn locked(&self) -> Result<bool> {

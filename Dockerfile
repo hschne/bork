@@ -8,10 +8,10 @@ ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release --locked
-RUN mkdir /artifact && cp target/release/signal-loss /artifact/ \
-    && readelf -l /artifact/signal-loss > /artifact/elf-program-headers.txt \
-    && readelf -d /artifact/signal-loss > /artifact/elf-dynamic.txt \
-    && ldd /artifact/signal-loss > /artifact/ldd.txt
+RUN mkdir /artifact && cp target/release/bork /artifact/ \
+    && readelf -l /artifact/bork > /artifact/elf-program-headers.txt \
+    && readelf -d /artifact/bork > /artifact/elf-dynamic.txt \
+    && ldd /artifact/bork > /artifact/ldd.txt
 
 # `docker build --target artifact --output type=local,dest=dist .`
 FROM scratch AS artifact
@@ -30,4 +30,4 @@ RUN cargo test --locked --test display --no-run --message-format=json > /tmp/dis
     && test -n "$executable" && cp "$executable" /artifact/display-test \
     && rm /tmp/display-build.json
 ENV LIBGL_ALWAYS_SOFTWARE=1
-CMD ["/artifact/signal-loss", "--version"]
+CMD ["/artifact/bork", "--version"]

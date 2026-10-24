@@ -1,7 +1,7 @@
 //! Only run by nested-session.sh in a namespace with no access to the active desktop.
 mod support;
 
-use signal_loss::{
+use bork::{
     artwork,
     effect::{Glitchiness, Settings},
     hyprland::Hyprland,
@@ -18,7 +18,7 @@ use std::{
 };
 
 fn isolated() -> PathBuf {
-    assert_eq!(std::env::var("SIGNAL_LOSS_ISOLATED").as_deref(), Ok("1"));
+    assert_eq!(std::env::var("BORK_ISOLATED").as_deref(), Ok("1"));
     let path = PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
     assert!(
         path.starts_with("/tmp")
@@ -42,7 +42,7 @@ fn pump(wayland: &mut InputMonitor, duration: Duration) {
 
 fn capture(name: &str, output: &str) -> PathBuf {
     let path = isolated().join(name);
-    let mut command = Command::new(std::env::var_os("SIGNAL_LOSS_GRIM").unwrap());
+    let mut command = Command::new(std::env::var_os("BORK_GRIM").unwrap());
     if !output.is_empty() {
         command.arg("-o").arg(output);
     }
@@ -72,8 +72,8 @@ impl Guardian {
         let hypr = Hyprland::from_env().unwrap();
         let runtime = hypr.runtime_directory().unwrap();
         let mut child = Command::new(
-            std::env::var_os("SIGNAL_LOSS_TEST_BINARY")
-                .unwrap_or_else(|| env!("CARGO_BIN_EXE_signal-loss").into()),
+            std::env::var_os("BORK_TEST_BINARY")
+                .unwrap_or_else(|| env!("CARGO_BIN_EXE_bork").into()),
         )
         .arg("guardian")
         .arg(runtime)
@@ -111,9 +111,9 @@ impl Guardian {
         }
     }
     fn trial(&mut self, shader: String) {
-        signal_loss::recovery::request_trial(
+        bork::recovery::request_trial(
             &Hyprland::from_env().unwrap().runtime_directory().unwrap(),
-            &signal_loss::recovery::TrialRequest::Start { shader },
+            &bork::recovery::TrialRequest::Start { shader },
         )
         .unwrap();
     }
@@ -341,7 +341,7 @@ fn compositor_shader_overlay_and_crash_recovery() {
         assert_eq!(hypr.get(key).unwrap(), *value);
     }
     assert!(
-        signal_loss::recovery::DesktopTrial::start(
+        bork::recovery::DesktopTrial::start(
             &hypr,
             Settings::default()
                 .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
@@ -356,19 +356,15 @@ fn compositor_shader_overlay_and_crash_recovery() {
     let session = target.lock();
     owner.heartbeat_for(Duration::from_millis(400));
     assert!(
-        !hypr
-            .json("layers")
-            .unwrap()
-            .to_string()
-            .contains("signal-loss"),
+        !hypr.json("layers").unwrap().to_string().contains("bork"),
         "Test card remained on security lock screen"
     );
     target.unlock(session);
     drop(owner);
     println!("Real session lock suppresses shader/overlays independently; locked trials refused.");
 
-    let app = std::env::var_os("SIGNAL_LOSS_TEST_BINARY")
-        .unwrap_or_else(|| env!("CARGO_BIN_EXE_signal-loss").into());
+    let app =
+        std::env::var_os("BORK_TEST_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_bork").into());
     let mut owner = Guardian::start();
     owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
     owner.heartbeat_for(Duration::from_millis(200));
@@ -408,7 +404,7 @@ fn compositor_shader_overlay_and_crash_recovery() {
             .join("trial.sock")
             .exists()
     );
-    let mut trial = signal_loss::recovery::DesktopTrial::start(
+    let mut trial = bork::recovery::DesktopTrial::start(
         &hypr,
         Settings::default()
             .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
@@ -428,7 +424,7 @@ fn compositor_shader_overlay_and_crash_recovery() {
     for (key, value) in &prior_trial {
         assert_eq!(hypr.get(key).unwrap(), *value);
     }
-    let trial = signal_loss::recovery::DesktopTrial::start(
+    let trial = bork::recovery::DesktopTrial::start(
         &hypr,
         Settings::default()
             .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
@@ -502,7 +498,7 @@ fn compositor_shader_overlay_and_crash_recovery() {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(20));
     }
-    let trial = signal_loss::recovery::DesktopTrial::start(
+    let trial = bork::recovery::DesktopTrial::start(
         &hypr,
         Settings::default()
             .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
@@ -639,7 +635,7 @@ fn assert_card(path: &std::path::Path) {
 }
 
 fn configure_output(hypr: &Hyprland, rule: &str) {
-    if std::env::var("SIGNAL_LOSS_LUA_CONFIG").as_deref() == Ok("1") {
+    if std::env::var("BORK_LUA_CONFIG").as_deref() == Ok("1") {
         let fields: Vec<_> = rule.split(',').collect();
         let transform = fields.get(5).copied().unwrap_or("0");
         let code = format!(
@@ -659,7 +655,7 @@ fn configure_output(hypr: &Hyprland, rule: &str) {
 fn graphics_counters() -> serde_json::Value {
     // Per-compositor counters are isolated; sysfs power is explicitly device-wide
     // and may include unrelated host GPU work. These are not battery estimates.
-    let Ok(pid) = std::env::var("SIGNAL_LOSS_COMPOSITOR_PID") else {
+    let Ok(pid) = std::env::var("BORK_COMPOSITOR_PID") else {
         return serde_json::json!({"unavailable":"Renderer is outside this client's PID namespace"});
     };
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();

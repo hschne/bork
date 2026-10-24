@@ -14,17 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Build pinned Linux verification environment
-        run: docker build --target verify -t signal-loss-verify:ci .
+        run: docker build --target verify -t bork-verify:ci .
       - name: Formatting, linting, deterministic tests
         run: >-
-          docker run --rm --network none signal-loss-verify:ci bash -c
+          docker run --rm --network none bork-verify:ci bash -c
           'cargo fmt --all -- --check &&
           cargo clippy --locked --all-targets -- -D warnings &&
           cargo test --locked'
       - name: Software OpenGL preview, controls and settings
         run: >-
           docker run --rm --network none --read-only --tmpfs /tmp --tmpfs /run
-          signal-loss-verify:ci bash /build/tests/preview-smoke.sh
-          /artifact/signal-loss /tmp/evidence
+          bork-verify:ci bash /build/tests/preview-smoke.sh
+          /artifact/bork /tmp/evidence
       - name: Produce executable without publishing
         run: docker build --target artifact --output type=local,dest=dist .

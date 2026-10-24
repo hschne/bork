@@ -32,7 +32,7 @@ float burstAt(float seconds, uint seed) {
     return burst;
 }
 
-vec4 signalLoss(vec2 uv, float seconds, uint seed) {
+vec4 bork(vec2 uv, float seconds, uint seed) {
     seconds = max(seconds, 0.0);
     seed = hashBits(seed);
     float tearsBurst = burstAt(seconds, seed ^ 0xa511e9b3u);

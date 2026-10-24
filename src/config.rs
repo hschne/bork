@@ -16,7 +16,7 @@ pub fn path() -> Result<PathBuf> {
         }
     };
     ensure!(root.is_absolute(), "Configuration root must be absolute");
-    Ok(root.join("signal-loss/settings.json"))
+    Ok(root.join("bork/settings.json"))
 }
 
 pub fn load(path: &Path) -> Result<Settings> {
@@ -35,8 +35,7 @@ fn load_version(path: &Path) -> Result<(Settings, Option<SystemTime>)> {
     let mut bytes = Vec::new();
     file.take(65537).read_to_end(&mut bytes)?;
     ensure!(bytes.len() <= 65536, "Settings file exceeds 64 KiB");
-    let settings: Settings =
-        serde_json::from_slice(&bytes).context("Invalid Signal Loss settings")?;
+    let settings: Settings = serde_json::from_slice(&bytes).context("Invalid Bork settings")?;
     Ok((settings, modified))
 }
 
@@ -102,6 +101,7 @@ mod tests {
         let first_poll = Instant::now() + Duration::from_secs(2);
         let mut settings = Settings::default();
         settings.set_curve(3.0).unwrap();
+        settings.timing.break_seconds = 210.try_into().unwrap();
         save(&path, &settings).unwrap();
         assert!(live.reload(first_poll).unwrap());
         assert_eq!(live.current(), &settings);
@@ -133,13 +133,43 @@ mod tests {
         let path = dir.path().join("config/settings.json");
         let mut s = load(&path).unwrap();
         use crate::effect::{Effect, EffectKind};
+        s.timing.work_seconds = 900.try_into().unwrap();
+        s.timing.grace_seconds = 60;
+        s.timing.break_seconds = 210.try_into().unwrap();
         s.set_effect(EffectKind::Tears, Effect::new(false, 5.0, 0.7).unwrap());
         s.set_effect(EffectKind::Colour, Effect::new(true, 32.5, 0.65).unwrap());
         save(&path, &s).unwrap();
         let reopened = load(&path).unwrap();
+        assert_eq!(reopened.timing, s.timing);
         assert!(!reopened.effect(EffectKind::Tears).enabled());
         assert_eq!(reopened.effect(EffectKind::Colour).entry(), 32.5);
         fs::write(&path, "{\"curve\":0}").unwrap();
         assert!(load(&path).is_err());
+    }
+
+    #[test]
+    fn timing_defaults_and_validation_apply_to_json() {
+        let mut settings = serde_json::to_value(Settings::default()).unwrap();
+        settings.as_object_mut().unwrap().remove("timing");
+        assert_eq!(
+            serde_json::from_value::<Settings>(settings.clone()).unwrap(),
+            Settings::default()
+        );
+        settings["timing"] = serde_json::json!({"break_seconds":210});
+        let parsed: Settings = serde_json::from_value(settings.clone()).unwrap();
+        assert_eq!(parsed.timing.work_seconds.get(), 1200);
+        assert_eq!(parsed.timing.grace_seconds, 180);
+        assert_eq!(parsed.timing.break_seconds.get(), 210);
+        for invalid in [
+            serde_json::json!({"work_seconds":0}),
+            serde_json::json!({"break_seconds":0}),
+            serde_json::json!({"grace_seconds":-1}),
+            serde_json::json!({"work_seconds":1.5}),
+            serde_json::json!({"work_seconds":4294967296_u64}),
+            serde_json::json!({"typo":10}),
+        ] {
+            settings["timing"] = invalid;
+            assert!(serde_json::from_value::<Settings>(settings.clone()).is_err());
+        }
     }
 }

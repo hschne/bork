@@ -49,6 +49,7 @@ pub struct Status {
     pub work_seconds: Option<u64>,
     pub remaining_seconds: Option<u64>,
     pub break_remaining_seconds: Option<u64>,
+    pub resting_seconds: Option<u64>,
     pub glitchiness: f32,
 }
 
@@ -60,6 +61,7 @@ impl Status {
             work_seconds: None,
             remaining_seconds: None,
             break_remaining_seconds: None,
+            resting_seconds: None,
             glitchiness: 0.0,
         }
     }
@@ -81,6 +83,7 @@ impl Status {
             work_seconds: Some(snapshot.worked),
             remaining_seconds: Some(snapshot.phase_remaining),
             break_remaining_seconds: Some(snapshot.break_remaining),
+            resting_seconds: Some(snapshot.resting_seconds),
             glitchiness: if state == State::Paused { 0.0 } else { level },
         }
     }
@@ -103,7 +106,7 @@ pub fn execute(runtime: &Path, command: Command) -> Result<Status> {
             if command == Command::Status {
                 Ok(Status::stopped())
             } else {
-                Err(error.context("Signal Loss background timer is not running"))
+                Err(error.context("Bork background timer is not running"))
             }
         }
         Err(error) => Err(error),

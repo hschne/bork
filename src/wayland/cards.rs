@@ -142,7 +142,7 @@ impl State {
             qh,
             surface,
             Layer::Overlay,
-            Some("signal-loss"),
+            Some("bork"),
             Some(&output),
         );
         layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);

@@ -132,7 +132,7 @@ fn bounded_smooth_monotonic_and_toggle() {
     assert!(
         s.hyprland_shader(Glitchiness::MAXIMUM)
             .unwrap()
-            .contains("signalLoss")
+            .contains("bork")
     );
     assert!(Glitchiness::try_from(f32::NAN).is_err());
     assert!(s.set_curve(f32::INFINITY).is_err());

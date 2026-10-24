@@ -10,7 +10,7 @@ impl Preview {
     pub(super) fn controls(&mut self, ui: &mut egui::Ui) {
         ui.add_space(14.0);
         ui.label(
-            RichText::new("SIGNAL LOSS / EDITOR")
+            RichText::new("BORK / EDITOR")
                 .monospace()
                 .color(Color32::from_rgb(212, 230, 162)),
         );
@@ -85,6 +85,30 @@ impl Preview {
         }
         ui.small("Timing only: larger powers delay escalation.");
         ui.separator();
+        ui.label("INTERVALS / SECONDS");
+        let timing = &mut self.settings.timing;
+        let mut work = timing.work_seconds.get();
+        let mut grace = timing.grace_seconds;
+        let mut rest = timing.break_seconds.get();
+        egui::Grid::new("intervals").show(ui, |ui| {
+            for (label, value, minimum) in [
+                ("Work", &mut work, 1),
+                ("Grace", &mut grace, 0),
+                ("Break", &mut rest, 1),
+            ] {
+                ui.label(label);
+                ui.add(egui::DragValue::new(value).range(minimum..=u32::MAX));
+                ui.end_row();
+            }
+        });
+        if let (Some(work), Some(rest)) = (work.try_into().ok(), rest.try_into().ok()) {
+            timing.work_seconds = work;
+            timing.grace_seconds = grace;
+            timing.break_seconds = rest;
+        }
+        ui.small("Grace may be zero. A full idle break clears work debt.");
+        ui.small("Locking stays with your existing lockscreen.");
+        ui.separator();
         if ui.button("Save settings").clicked() {
             self.status = match config::save(&self.path, &self.settings) {
                 Ok(()) => format!("Saved {}", self.path.display()),
@@ -109,7 +133,7 @@ impl Preview {
                 Err(e) => format!("Recovery error: {e:#}"),
             };
         }
-        ui.small("Emergency: signal-loss reset");
+        ui.small("Emergency: bork reset");
         ui.add_space(8.0);
         ui.label(&self.status);
     }

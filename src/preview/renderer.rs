@@ -176,7 +176,7 @@ fn compile(gl: &glow::Context, body: &str) -> Result<glow::Program> {
         "{header}out vec2 uv;\nvoid main() {{ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); uv = vec2(p.x, 1.0-p.y); gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }}"
     );
     let fragment = format!(
-        "{header}in vec2 uv; out vec4 out_colour; uniform sampler2D tex; uniform float time; uniform uint run_seed;\nvec4 sampleDesktop(vec2 p) {{ return texture(tex, clamp(p, 0.0, 1.0)); }}\n{body}\nvoid main() {{ out_colour = signalLoss(uv, time, run_seed); }}"
+        "{header}in vec2 uv; out vec4 out_colour; uniform sampler2D tex; uniform float time; uniform uint run_seed;\nvec4 sampleDesktop(vec2 p) {{ return texture(tex, clamp(p, 0.0, 1.0)); }}\n{body}\nvoid main() {{ out_colour = bork(uv, time, run_seed); }}"
     );
     // SAFETY: invoked only in current-context creation/paint callbacks. Shader source
     // lifetimes cover each upload. All temporary shader handles are deleted on every path.

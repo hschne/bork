@@ -41,7 +41,7 @@ impl Server {
             .write(true)
             .open(runtime.join("timer.lock"))?;
         lock.try_lock_exclusive()
-            .context("Signal Loss background timer is already running")?;
+            .context("Bork background timer is already running")?;
         let path = runtime.join("timer.sock");
         match fs::remove_file(&path) {
             Ok(()) => (),

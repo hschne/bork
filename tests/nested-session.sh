@@ -25,7 +25,7 @@ inside() {
   [[ -S "$socket" ]] || die "Parent compositor did not start"
   export WAYLAND_DISPLAY="${socket##*/}"
   local config="$XDG_RUNTIME_DIR/hyprland.conf"
-  [[ "${SIGNAL_LOSS_LUA_CONFIG:-}" != 1 ]] || config="$XDG_RUNTIME_DIR/hyprland.lua"
+  [[ "${BORK_LUA_CONFIG:-}" != 1 ]] || config="$XDG_RUNTIME_DIR/hyprland.lua"
   "$hyprland" -c "$config" >"$XDG_RUNTIME_DIR/hyprland.log" 2>&1 &
   child_pid=$!
   local ipc=""
@@ -44,9 +44,9 @@ inside() {
       break
     fi
   done
-  export SIGNAL_LOSS_COMPOSITOR_PID="$child_pid"
+  export BORK_COMPOSITOR_PID="$child_pid"
   "$app" doctor
-  if [[ "${SIGNAL_LOSS_EXTERNAL_PROOF:-}" == 1 ]]; then
+  if [[ "${BORK_EXTERNAL_PROOF:-}" == 1 ]]; then
     printf '%s\n' "$WAYLAND_DISPLAY" >"$XDG_RUNTIME_DIR/test-display"
     printf '%s\n' "$HYPRLAND_INSTANCE_SIGNATURE" >"$XDG_RUNTIME_DIR/test-signature"
     touch "$XDG_RUNTIME_DIR/test-ready"
@@ -54,15 +54,15 @@ inside() {
     [[ -f "$XDG_RUNTIME_DIR/test-status" ]] || die "External proof did not finish"
     [[ "$(cat "$XDG_RUNTIME_DIR/test-status")" == 0 ]] || die "External proof failed"
   else
-    SIGNAL_LOSS_ISOLATED=1 timeout 45 "$proof" --ignored --nocapture --test-threads=1
+    BORK_ISOLATED=1 timeout 45 "$proof" --ignored --nocapture --test-threads=1
   fi
-  if [[ "${SIGNAL_LOSS_CLEAN_PREVIEW:-}" == 1 ]]; then
+  if [[ "${BORK_CLEAN_PREVIEW:-}" == 1 ]]; then
     # No development-shell graphics paths: exercise the executable's discovery
     # against a real Wayland display. /run/current-system is hidden here, so make
     # the installed compositor package available through PATH instead.
-    env -u LD_LIBRARY_PATH -u _SIGNAL_LOSS_RUNTIME_READY \
-      -u SIGNAL_LOSS_LIBRARY_PATH -u SIGNAL_LOSS_HYPRLAND_BINARY -u SIGNAL_LOSS_NIX_DISCOVERY \
-      PATH="$(dirname "$hyprland"):$PATH" SIGNAL_LOSS_TEST_CAPTURE="$XDG_RUNTIME_DIR/standalone-preview.png" \
+    env -u LD_LIBRARY_PATH -u _BORK_RUNTIME_READY \
+      -u BORK_LIBRARY_PATH -u BORK_HYPRLAND_BINARY -u BORK_NIX_DISCOVERY \
+      PATH="$(dirname "$hyprland"):$PATH" BORK_TEST_CAPTURE="$XDG_RUNTIME_DIR/standalone-preview.png" \
       timeout 20 "$app" preview >"$XDG_RUNTIME_DIR/standalone-preview.log" 2>&1
     [[ -s "$XDG_RUNTIME_DIR/standalone-preview.png" ]] || die "Standalone Wayland preview did not capture a frame"
   fi
@@ -78,16 +78,16 @@ function main() {
   local root runtime sway hyprland shell coreutils sandbox aquamarine proof grim app output loader library_path entry
   local -a loader_paths
   root="$(pwd)"
-  app="${SIGNAL_LOSS_TEST_BINARY:-$root/target/debug/signal-loss}"
+  app="${BORK_TEST_BINARY:-$root/target/debug/bork}"
   app="$(realpath "$app")"
-  [[ -x "$app" ]] || die "Run cargo build first, or set SIGNAL_LOSS_TEST_BINARY"
-  output="${SIGNAL_LOSS_EVIDENCE_DIR:-$root/.agents/evidence}"
+  [[ -x "$app" ]] || die "Run cargo build first, or set BORK_TEST_BINARY"
+  output="${BORK_EVIDENCE_DIR:-$root/.agents/evidence}"
   proof="$(mise exec -- cargo test --test display --no-run --message-format=json | sed -n '/"name":"display"/s/.*"executable":"\([^"]*\)".*/\1/p')"
   [[ -x "$proof" ]] || die "Display test executable missing"
   grim="$(readlink -f "$(command -v grim)")"
   runtime="$(mktemp -d /tmp/sl.XXXX)"
   mkdir -p "$runtime/home/.cache"
-  if [[ -n "${SIGNAL_LOSS_RUNTIME_FILE:-}" ]]; then printf '%s\n' "$runtime" >"$SIGNAL_LOSS_RUNTIME_FILE"; fi
+  if [[ -n "${BORK_RUNTIME_FILE:-}" ]]; then printf '%s\n' "$runtime" >"$BORK_RUNTIME_FILE"; fi
   sway="$(nix build nixpkgs#sway-unwrapped --no-link --print-out-paths)/bin/sway"
   aquamarine="$(nix build path:./nix#nested-aquamarine --no-link --print-out-paths)"
   echo "Test-only Aquamarine version-negotiation fix: $aquamarine"
@@ -129,7 +129,7 @@ EOF
   env -u WAYLAND_DISPLAY -u DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u HYPRLAND_INSTANCE_SIGNATURE \
     PATH="$coreutils" TMPDIR="$runtime" XDG_RUNTIME_DIR="$runtime" HOME="$runtime/home" XDG_CACHE_HOME="$runtime/home/.cache" \
     NIX_LD="$loader" NIX_LD_LIBRARY_PATH="$library_path" \
-    HYPRLAND_NO_SD_NOTIFY=1 AQ_DRM_DEVICES='' LD_LIBRARY_PATH="$aquamarine/lib:${LD_LIBRARY_PATH:-}" SIGNAL_LOSS_GRIM="$grim" SIGNAL_LOSS_TEST_BINARY="$app" \
+    HYPRLAND_NO_SD_NOTIFY=1 AQ_DRM_DEVICES='' LD_LIBRARY_PATH="$aquamarine/lib:${LD_LIBRARY_PATH:-}" BORK_GRIM="$grim" BORK_TEST_BINARY="$app" \
     "$sandbox" --ro-bind / / --tmpfs /run --ro-bind "$(readlink -f /run/opengl-driver)" /run/opengl-driver \
     --dev /dev --proc /proc --dev-bind /dev/dri/renderD128 /dev/dri/renderD128 \
     --bind "$runtime" "$runtime" --unshare-pid --as-pid-1 --die-with-parent --unshare-net -- \

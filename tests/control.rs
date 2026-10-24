@@ -1,5 +1,5 @@
 //! Real CLI + local timer peer. No Wayland connection or display mutations.
-use signal_loss::{
+use bork::{
     control::{Command as TimerCommand, Phase, State, Status},
     hyprland::Hyprland,
 };
@@ -30,14 +30,14 @@ impl Session {
         Self { directory, runtime }
     }
     fn command(&self, action: &str) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_signal-loss"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_bork"));
         command
             .arg(action)
             .env("XDG_RUNTIME_DIR", self.directory.path())
             .env("HYPRLAND_INSTANCE_SIGNATURE", "cli-fixture")
-            .env_remove("_SIGNAL_LOSS_RUNTIME_READY")
-            .env("SIGNAL_LOSS_LIBRARY_PATH", "broken")
-            .env("SIGNAL_LOSS_NIX_DISCOVERY", "broken");
+            .env_remove("_BORK_RUNTIME_READY")
+            .env("BORK_LIBRARY_PATH", "broken")
+            .env("BORK_NIX_DISCOVERY", "broken");
         command
     }
     fn listener(&self) -> UnixListener {
@@ -84,8 +84,9 @@ fn every_timer_command_roundtrips_json_without_graphics_initialization() {
             },
             phase: Some(Phase::Work),
             work_seconds: Some(42),
-            remaining_seconds: Some(1158),
+            remaining_seconds: Some(1338),
             break_remaining_seconds: Some(300),
+            resting_seconds: Some(0),
             glitchiness: 0.0,
         };
         let peer = thread::spawn(move || {

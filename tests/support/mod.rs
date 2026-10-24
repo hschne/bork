@@ -67,7 +67,7 @@ pub struct LockSession {
 
 impl Desktop {
     pub fn new() -> Self {
-        assert_eq!(std::env::var("SIGNAL_LOSS_ISOLATED").as_deref(), Ok("1"));
+        assert_eq!(std::env::var("BORK_ISOLATED").as_deref(), Ok("1"));
         let connection = Connection::connect_to_env().unwrap();
         let (globals, mut queue) = registry_queue_init::<State>(&connection).unwrap();
         let qh = queue.handle();
@@ -101,13 +101,13 @@ impl Desktop {
         let surface = compositor.create_surface(&qh, ());
         let xdg_surface = shell.get_xdg_surface(&surface, &qh, ());
         let toplevel = xdg_surface.get_toplevel(&qh, ());
-        toplevel.set_title("Signal Loss disposable input target".into());
-        toplevel.set_app_id("signal-loss-proof-target".into());
+        toplevel.set_title("Bork disposable input target".into());
+        toplevel.set_app_id("bork-proof-target".into());
         toplevel.set_fullscreen(None);
         surface.commit();
         queue.roundtrip(&mut state).unwrap();
         assert!(state.configured);
-        let image = signal_loss::artwork::desktop();
+        let image = bork::artwork::desktop();
         let mut file = tempfile::tempfile().unwrap();
         for pixel in image.rgba().chunks_exact(4) {
             let colour = (255u32 << 24)

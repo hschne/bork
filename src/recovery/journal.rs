@@ -57,7 +57,7 @@ fn write_journal(path: &Path, journal: &Journal) -> Result<()> {
     Ok(())
 }
 
-/// Compare-and-restore values still owned by Signal Loss.
+/// Compare-and-restore values still owned by Bork.
 pub fn restore(path: &Path) -> Result<()> {
     let journal_path = path.join("journal.json");
     if !journal_path.exists() {

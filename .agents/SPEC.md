@@ -1,16 +1,16 @@
-# Signal Loss
+# Bork
 
 ## Product
 
 A playful but hard-to-ignore break reminder for Hyprland on Linux. It distorts the actual desktop rather than covering it with an ordinary notification.
 
-- After 20 minutes of work, enter a three-minute grace period. Interference escalates nonlinearly, then a steady **TAKE A BREAK** test card covers every output.
-- Five continuous minutes without keyboard **or mouse** input completes a break. Reading and watching count; media idle inhibitors must not prevent a break.
-- Inactivity accumulated before the test card counts toward the same five minutes. Short pauses retain work debt. After a completed break, resumed input starts the next work interval.
-- Locking suppresses effects without resetting debt. Input-free suspend and lock time count toward a break. Observe startup and input-seat changes conservatively rather than inventing prior inactivity.
+- After the work interval, enter a grace period. Interference escalates nonlinearly, then a steady **TAKE A BREAK** test card covers every output. Work, grace, and break durations are configurable in settings and the editor; defaults are 20, three, and five minutes. Work and break are positive whole seconds; grace may be zero. Reloading durations preserves debt and observed inactivity.
+- A full configured break duration without keyboard **or mouse** input completes a break at any point in the cycle. Reading and watching count; media idle inhibitors must not prevent a break.
+- Inactivity accumulated before the test card counts toward the same break. Short pauses retain work debt. After a completed break, resumed input starts the next work interval if unlocked; while locked, input does not restart work, and successful unlock marks the return.
+- Locking suppresses effects without resetting debt. Input-free suspend and lock time count toward a break; locked input interrupts an incomplete break. Early unlock retains debt. Session locking and unlocking remain the user's existing locker's responsibility. Observe startup and input-seat changes conservatively rather than inventing prior inactivity.
 - Manual pause freezes work debt and clears effects; resume retains debt but starts fresh idle observation. Paused time does not advance work or complete a break.
 - Reset starts a fresh running interval even from pause or overtime, clears effects, and cancels desktop trials. If the timer is absent or unresponsive, reset performs independent display recovery without launching a background process. It replaces emergency stop.
-- Provide machine-readable timer status for bar integrations without initializing graphics; acknowledge timer commands only after applying display changes.
+- Provide machine-readable timer status for bar integrations without initializing graphics; acknowledge timer commands only after applying display changes. The countdown spans work + grace continuously until the test card, then shows remaining break time. Report elapsed resting time from break completion, frozen during manual pause.
 - Glitchiness is continuous from 0 to 100, separate from the deadline/test-card state. Selecting 100 in the editor must not trigger a test card.
 
 ## Effects and editor
@@ -35,7 +35,7 @@ A playful but hard-to-ignore break reminder for Hyprland on Linux. It distorts t
 ## Recovery
 
 - A separate invocation of the same executable owns display mutations and recovers independently of main-process exit handlers, including parent EOF and missed heartbeats.
-- Journal exact prior shader and rendering settings before mutation. Restore only values still owned by Signal Loss; preserve newer external changes and retain unresolved journals for retry.
+- Journal exact prior shader and rendering settings before mutation. Restore only values still owned by Bork; preserve newer external changes and retain unresolved journals for retry.
 - Locking independently removes effects and overlays. Trial deadlines use boot time so suspension cannot extend them.
 - Emergency reset must remain usable with broken graphics overrides. Compositor disconnection/conflicts are recoverable errors, not permission to guess replacement settings.
 

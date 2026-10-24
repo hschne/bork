@@ -14,7 +14,7 @@ pub struct Stopped;
 
 impl std::fmt::Display for Stopped {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Signal Loss display owner stopped")
+        f.write_str("Bork display owner stopped")
     }
 }
 impl std::error::Error for Stopped {}

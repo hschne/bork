@@ -28,7 +28,7 @@ pub fn open() -> Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Signal Loss · signal editor",
+        "Bork · signal editor",
         options,
         Box::new(move |cc| {
             let gl = cc.gl.as_ref().context("OpenGL context unavailable")?;

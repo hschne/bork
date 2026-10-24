@@ -9,11 +9,11 @@ function main() {
   local output scratch native runtime="" status cleanup
   output="$PWD/.agents/evidence/debian-session"
   mkdir -p "$output"
-  if [[ "${SIGNAL_LOSS_VERIFY_IMAGE_READY:-}" != 1 ]]; then
-    docker buildx build --load --build-arg "BUILD_JOBS=${CARGO_BUILD_JOBS:-2}" --target verify -t signal-loss-verify:local . >"$output/image-build.log" 2>&1
+  if [[ "${BORK_VERIFY_IMAGE_READY:-}" != 1 ]]; then
+    docker buildx build --load --build-arg "BUILD_JOBS=${CARGO_BUILD_JOBS:-2}" --target verify -t bork-verify:local . >"$output/image-build.log" 2>&1
   fi
   scratch="$(mktemp -d)"
-  SIGNAL_LOSS_RUNTIME_FILE="$scratch/runtime" SIGNAL_LOSS_EXTERNAL_PROOF=1 SIGNAL_LOSS_EVIDENCE_DIR="$output" \
+  BORK_RUNTIME_FILE="$scratch/runtime" BORK_EXTERNAL_PROOF=1 BORK_EVIDENCE_DIR="$output" \
     bash tests/nested-session.sh >"$output/session.log" 2>&1 &
   native=$!
   # Expand/escape owned fixture paths before main's locals leave scope.
@@ -28,13 +28,13 @@ function main() {
   done
   [[ -n "$runtime" && -f "$runtime/test-ready" ]] || die "Isolated session never became ready"
   status=0
-  docker run --rm --cpus "${SIGNAL_LOSS_CPU_LIMIT:-2}" --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  docker run --rm --cpus "${BORK_CPU_LIMIT:-2}" --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
     --user "$(id -u):$(id -g)" --tmpfs /tmp --tmpfs /run \
     -v "$runtime:$runtime" \
     -e "XDG_RUNTIME_DIR=$runtime" -e "TMPDIR=$runtime" -e "HOME=$runtime/home" -e "XDG_CACHE_HOME=$runtime/home/.cache" \
     -e "WAYLAND_DISPLAY=$(cat "$runtime/test-display")" -e "HYPRLAND_INSTANCE_SIGNATURE=$(cat "$runtime/test-signature")" \
-    -e SIGNAL_LOSS_ISOLATED=1 -e SIGNAL_LOSS_GRIM=/usr/bin/grim -e SIGNAL_LOSS_TEST_BINARY=/artifact/signal-loss \
-    signal-loss-verify:local timeout 60 /artifact/display-test --ignored --nocapture --test-threads=1 >"$output/nested-test.log" 2>&1 || status=$?
+    -e BORK_ISOLATED=1 -e BORK_GRIM=/usr/bin/grim -e BORK_TEST_BINARY=/artifact/bork \
+    bork-verify:local timeout 60 /artifact/display-test --ignored --nocapture --test-threads=1 >"$output/nested-test.log" 2>&1 || status=$?
   printf '%s\n' "$status" >"$runtime/test-status"
   wait "$native" || die "Session/proof failed; see $output/nested-test.log and session.log"
   [[ "$status" == 0 ]] || die "Debian proof failed"

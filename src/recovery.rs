@@ -47,7 +47,7 @@ fn lock(path: &Path) -> Result<File> {
         .write(true)
         .open(path.join("owner.lock"))?;
     file.try_lock_exclusive()
-        .context("Signal Loss display owner is already running")?;
+        .context("Bork display owner is already running")?;
     Ok(file)
 }
 

@@ -280,7 +280,7 @@ pub fn test_card(width: usize, height: usize, remaining: u64) -> Canvas {
         3,
         [217, 232, 178],
     );
-    c.text("SIGNAL LOSS  /  REST CHANNEL", 424, 630, 2, [221, 220, 208]);
+    c.text("BORK  /  REST CHANNEL", 472, 630, 2, [221, 220, 208]);
     if width == 1280 && height == 720 {
         return c;
     }
