@@ -14,7 +14,8 @@ Copy the executable anywhere on your PATH; no installer, Python, Lua interpreter
 bork doctor       # Non-mutating compositor/protocol capability check
 bork              # Background operation; no control window
 bork preview      # Tune, save, preview test card, or explicitly try the desktop for 5 s
-bork status       # One JSON timer snapshot, suitable for Waybar polling
+bork status       # One JSON timer snapshot, suitable for Waybar/lockscreen polling
+bork config list  # Inspect effective settings, including defaults
 bork pause        # Freeze work debt and clear effects
 bork resume       # Continue with preserved debt
 bork reset        # Fresh running interval; also the panic/recovery command
@@ -33,6 +34,27 @@ Omitted durations use their defaults. Values must fit unsigned 32-bit seconds. S
 The editor's slider accepts an exact numeric value from 0 to 100. Selecting 100 does **not** trigger the test card. Each effect has an independent toggle, entry level, and maximum strength. Settings are saved to `$XDG_CONFIG_HOME/bork/settings.json` (normally `~/.config/bork/settings.json`). Background operation reloads saved changes within one second without resetting work debt.
 
 A desktop trial requires confirmation, lasts five seconds, and restores the current background state. It also works while the background timer is running: the display guardian temporarily overrides the effect, while the controller continues counting normally. Closing the editor ends its trial; editor failure cannot extend it. Trial deadlines use boot time, so suspension does not extend a trial; locking cancels it.
+
+## Configuration CLI
+
+The editor and CLI share `$XDG_CONFIG_HOME/bork/settings.json` (normally `~/.config/bork/settings.json`). There are no local/global scopes. Reading configuration does not require a running timer, compositor, or graphics libraries, and does not create a settings file.
+
+```sh
+bork config list                         # Sorted dotted-key=value lines, including defaults
+bork config list --json                  # One JSON object with the same dotted keys
+bork config get timing.break_seconds     # Prints 300 by default
+bork config set timing.break_seconds 240
+bork config set timing.grace_seconds 0
+bork config set tears.enabled false
+bork config set colour.maximum 0.5
+bork config set curve 2.5
+bork config unset timing.break_seconds   # Restore only this key's default
+bork config path                         # Print the settings file location
+```
+
+Keys are `timing.work_seconds`, `timing.grace_seconds`, `timing.break_seconds`, `curve`, and `enabled`, `entry`, `maximum` under each of `tears`, `colour`, `bands`, `noise`, and `ghost`. Values are JSON numbers or booleans, not strings. Curve accepts 1.01–5, effect entry 0–99, and maximum 0–1. Timing uses the whole-second ranges described above.
+
+`get` prints one JSON scalar. `set` and `unset` are silent on success; they validate the complete settings before atomically saving, preserve other effective values, and leave the file untouched on failure. Unknown keys, object-valued groups, and invalid values are errors with a nonzero exit status. `unset` saves the default value rather than deleting the key. The running timer reloads changes within one second without resetting debt. These commands do not activate effects themselves; changing settings can change the running timer's phase or display intent through its normal reload.
 
 ## Timer control and Waybar
 
@@ -64,6 +86,48 @@ Pause clears effects and preserves work debt. Paused time does not advance work 
 
 Reset replaces the former `stop` command. If the timer is absent or does not reply within two seconds, reset falls back to independent guardian shutdown and journal recovery. That fallback reports `stopped`, never launches a daemon, and still reports restoration conflicts as errors. Use Ctrl-C or SIGTERM to shut down a healthy background process completely.
 
+## Lockscreen appearance
+
+Bork does not draw over a security lockscreen. Your locker owns authentication and layout; Bork continues tracking input-free break time while locked. A voluntary lock can complete a break at any point in the cycle. Unlocking early preserves debt; typing or moving the mouse while locked interrupts an incomplete break.
+
+The optional default background is [`assets/intermission.png`](assets/intermission.png), rendered from Bork's test-card artwork with an empty countdown area. Copy it from this checkout to a stable location:
+
+```sh
+install -Dm644 assets/intermission.png ~/.local/share/bork/intermission.png
+```
+
+### Hyprlock example
+
+This is documentation, not an installed integration. Keep your existing authentication settings and password input field. In `~/.config/hypr/hyprlock.conf`, replace your screenshot background with the following and add the label. Install `jq` and make sure both `bork` and `jq` are on Hyprlock's PATH. Use an absolute image path, replacing `/home/YOU` below:
+
+```ini
+background {
+    monitor =
+    path = /home/YOU/.local/share/bork/intermission.png
+    color = rgba(111718ff)
+    blur_passes = 0
+    noise = 0
+    contrast = 1
+    brightness = 1
+    vibrancy = 0
+}
+
+label {
+    monitor =
+    text = cmd[update:1000] bork status 2>/dev/null | jq -ers 'def pad: tostring | if length < 2 then "0" + . else . end; .[0] | if .state == "resting" then "BREAK COMPLETE" elif .state == "paused" then "BORK PAUSED" elif .state == "stopped" then "BORK STOPPED" elif .state == "running" and (.break_remaining_seconds | type) == "number" then .break_remaining_seconds | "\(. / 60 | floor | pad):\(. % 60 | pad) LEFT" else error("Invalid status") end' 2>/dev/null || printf 'BORK UNAVAILABLE\n'
+    color = rgba(d9e8b2ff)
+    font_family = monospace
+    font_size = 24
+    position = 0, -10%
+    halign = center
+    valign = center
+}
+```
+
+Keep the `text` command on a single line. It polls once per second and uses `break_remaining_seconds`, **not** `remaining_seconds` (which counts toward the test card during work/grace). It shows `BREAK COMPLETE` after sufficient inactivity, explicit paused/stopped states, and `BORK UNAVAILABLE` when status cannot be read. None of these messages disables authentication or prevents early unlocking.
+
+Choose any PNG/JPEG/WebP by changing `background.path`. Countdown placement is entirely controlled by the label's `position`, `halign`, and `valign`; font and colour are configurable there too. Empty `monitor` applies to every output. Percentage offsets keep the label near the default image's empty strip on 16:9 displays; different aspect ratios may crop the background, so adjust positions per monitor as needed. Move your existing password field below the panel (for example, `position = 0, -29%` with centre alignment), and move or remove other labels that overlap it. Bork does not read or modify your lockscreen configuration.
+
 ## Host requirements
 
 Desktop effects require Hyprland on Linux. Run `bork doctor` to check your session's capabilities. The editor runs independently on Wayland or X11 and requires OpenGL 3+/GLES 3+.
@@ -82,8 +146,8 @@ These are example host packages, **not commands run by the application**. On Nix
 
 ### Runtime library configuration
 
-| Environment variable          | Purpose                                                                                                                          |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Environment variable   | Purpose                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `BORK_LIBRARY_PATH`    | Colon-separated, existing absolute library directories. These precede inherited `LD_LIBRARY_PATH` and automatic discovery.       |
 | `BORK_NIX_DISCOVERY`   | `auto` (default: enabled on NixOS), `0` to disable, or `1` to force discovery.                                                   |
 | `BORK_HYPRLAND_BINARY` | Absolute compositor executable to inspect instead of the system/PATH package. Standard Nix wrappers are unwrapped automatically. |

@@ -5,7 +5,7 @@
 pub mod artwork;
 pub mod background;
 mod clock;
-mod config;
+pub mod config;
 pub mod control;
 mod cycle;
 pub mod effect;

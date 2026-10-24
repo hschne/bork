@@ -1,6 +1,7 @@
 use crate::effect::Settings;
 use anyhow::{Context, Result, ensure};
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
@@ -48,6 +49,64 @@ pub fn save(path: &Path, settings: &Settings) -> Result<()> {
     file.persist(path)?;
     File::open(parent)?.sync_all()?;
     Ok(())
+}
+
+/// Effective scalar settings under dotted keys, including defaults.
+pub fn list(path: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
+    fn flatten(
+        prefix: &str,
+        value: serde_json::Value,
+        result: &mut BTreeMap<String, serde_json::Value>,
+    ) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                for (key, value) in fields {
+                    let key = if prefix.is_empty() {
+                        key
+                    } else {
+                        format!("{prefix}.{key}")
+                    };
+                    flatten(&key, value, result);
+                }
+            }
+            value => {
+                result.insert(prefix.to_owned(), value);
+            }
+        }
+    }
+    let mut result = BTreeMap::new();
+    // Preserve serde's short f32 representation instead of widening it to f64.
+    let values = serde_json::from_slice(&serde_json::to_vec(&load(path)?)?)?;
+    flatten("", values, &mut result);
+    Ok(result)
+}
+
+/// Read a known scalar setting; object-valued groups are not keys.
+pub fn get(path: &Path, key: &str) -> Result<serde_json::Value> {
+    list(path)?
+        .remove(key)
+        .with_context(|| format!("Unknown config key: {key}"))
+}
+
+/// Set a scalar value, or restore its default with `None`, before atomic saving.
+pub fn update(path: &Path, key: &str, value: Option<serde_json::Value>) -> Result<()> {
+    let mut settings = serde_json::to_value(load(path)?)?;
+    let mut default = serde_json::to_value(Settings::default())?;
+    let mut target = &mut settings;
+    let mut fallback = &mut default;
+    for part in key.split('.') {
+        target = target
+            .get_mut(part)
+            .with_context(|| format!("Unknown config key: {key}"))?;
+        fallback = fallback
+            .get_mut(part)
+            .with_context(|| format!("Unknown config key: {key}"))?;
+    }
+    ensure!(!target.is_object(), "Unknown config key: {key}");
+    *target = value.unwrap_or_else(|| fallback.take());
+    let settings: Settings = serde_json::from_value(settings)
+        .with_context(|| format!("Invalid value for config key: {key}"))?;
+    save(path, &settings)
 }
 
 /// Polling settings reload owns its file version; work debt never lives here.

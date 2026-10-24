@@ -1,7 +1,7 @@
 use anyhow::Result;
-use bork::{control, hyprland::Hyprland, recovery};
+use bork::{config, control, hyprland::Hyprland, recovery};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 #[derive(Parser)]
 #[command(
@@ -20,6 +20,11 @@ enum Action {
     Doctor,
     /// Open the shader tuning editor; ordinary desktop settings remain unchanged.
     Preview,
+    /// Read or change user settings without connecting to the compositor.
+    Config {
+        #[command(subcommand)]
+        command: ConfigAction,
+    },
     /// Print the background timer status as one JSON object.
     Status,
     /// Freeze work debt and remove interference/test cards.
@@ -30,6 +35,24 @@ enum Action {
     Reset,
     #[command(hide = true)]
     Guardian { runtime: PathBuf, socket: PathBuf },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// List effective settings, including defaults, under dotted keys.
+    List {
+        /// Print one JSON object instead of key=value lines.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the effective value of one scalar setting.
+    Get { key: String },
+    /// Validate and atomically save a scalar setting (JSON number or boolean).
+    Set { key: String, value: String },
+    /// Restore one setting to its default, leaving other values unchanged.
+    Unset { key: String },
+    /// Print the user settings file path without reading or creating it.
+    Path,
 }
 
 fn main() -> Result<()> {
@@ -53,6 +76,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(Action::Preview) => bork::preview::open(),
+        Some(Action::Config { command }) => configure(command),
         Some(Action::Status) => timer(control::Command::Status),
         Some(Action::Pause) => timer(control::Command::Pause),
         Some(Action::Resume) => timer(control::Command::Resume),
@@ -60,6 +84,31 @@ fn main() -> Result<()> {
         Some(Action::Guardian { runtime, socket }) => recovery::run_guardian(&runtime, socket),
         None => bork::background::run(),
     }
+}
+
+fn configure(command: ConfigAction) -> Result<()> {
+    let path = config::path()?;
+    let mut stdout = std::io::stdout().lock();
+    match command {
+        ConfigAction::Path => writeln!(stdout, "{}", path.display())?,
+        ConfigAction::List { json } => {
+            let values = config::list(&path)?;
+            if json {
+                serde_json::to_writer(&mut stdout, &values)?;
+                writeln!(stdout)?;
+            } else {
+                for (key, value) in values {
+                    writeln!(stdout, "{key}={value}")?;
+                }
+            }
+        }
+        ConfigAction::Get { key } => writeln!(stdout, "{}", config::get(&path, &key)?)?,
+        ConfigAction::Set { key, value } => {
+            config::update(&path, &key, Some(serde_json::from_str(&value)?))?;
+        }
+        ConfigAction::Unset { key } => config::update(&path, &key, None)?,
+    }
+    Ok(())
 }
 
 fn timer(command: control::Command) -> Result<()> {
