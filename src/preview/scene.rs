@@ -72,7 +72,7 @@ impl Scene {
         }
         let width = ui.available_width();
         let height =
-            (width * 9.0 / 16.0).min((ui.ctx().content_rect().height() - 400.0).max(180.0));
+            (width * 9.0 / 16.0).min((ui.ctx().content_rect().height() - 530.0).max(180.0));
         let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
         let rect =
             egui::Rect::from_center_size(outer.center(), egui::vec2(height * 16.0 / 9.0, height));

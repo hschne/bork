@@ -51,7 +51,7 @@ pub fn save(path: &Path, settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-/// Effective scalar settings under dotted keys, including defaults.
+/// Effective leaf settings under dotted keys, including defaults.
 pub fn list(path: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
     fn flatten(
         prefix: &str,
@@ -81,14 +81,14 @@ pub fn list(path: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
     Ok(result)
 }
 
-/// Read a known scalar setting; object-valued groups are not keys.
+/// Read a known setting; object-valued groups are not keys.
 pub fn get(path: &Path, key: &str) -> Result<serde_json::Value> {
     list(path)?
         .remove(key)
         .with_context(|| format!("Unknown config key: {key}"))
 }
 
-/// Set a scalar value, or restore its default with `None`, before atomic saving.
+/// Set a leaf value, or restore its default with `None`, before atomic saving.
 pub fn update(path: &Path, key: &str, value: Option<serde_json::Value>) -> Result<()> {
     let mut settings = serde_json::to_value(load(path)?)?;
     let mut default = serde_json::to_value(Settings::default())?;
@@ -159,7 +159,9 @@ mod tests {
         let mut live = LiveSettings::open(path.clone()).unwrap();
         let first_poll = Instant::now() + Duration::from_secs(2);
         let mut settings = Settings::default();
-        settings.set_curve(3.0).unwrap();
+        let mut points = settings.curve().points();
+        points[1].intensity = 60.0;
+        settings.set_curve(points).unwrap();
         settings.timing.break_seconds = 210.try_into().unwrap();
         save(&path, &settings).unwrap();
         assert!(live.reload(first_poll).unwrap());

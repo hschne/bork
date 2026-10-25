@@ -19,7 +19,7 @@ fn suspend_is_conservative_and_a_full_break_survives_immediate_input() {
     assert_eq!(cycle.advance(2999, curve), DesiredPhase::Work);
     assert_eq!(
         cycle.advance(3000, curve),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
 }
 
@@ -43,14 +43,18 @@ fn retuning_the_grace_curve_does_not_change_work_debt_or_deadline() {
     let mut cycle = BreakCycle::new(0);
     assert_eq!(
         cycle.advance(1290, GraceCurve::default()),
-        DesiredPhase::Interference(Glitchiness::try_from(25.0).unwrap())
+        DesiredPhase::Interference(GraceCurve::default().level(0.5))
+    );
+    let mut points = GraceCurve::default().points();
+    points[0].intensity = 0.0;
+    points[1].intensity = 10.0;
+    let curve = GraceCurve::try_from(points).unwrap();
+    assert_eq!(
+        cycle.advance(1290, curve),
+        DesiredPhase::Interference(curve.level(0.5))
     );
     assert_eq!(
-        cycle.advance(1290, GraceCurve::try_from(3.0).unwrap()),
-        DesiredPhase::Interference(Glitchiness::try_from(12.5).unwrap())
-    );
-    assert_eq!(
-        cycle.advance(1380, GraceCurve::try_from(5.0).unwrap()),
+        cycle.advance(1380, curve),
         DesiredPhase::TestCard { remaining: 300 }
     );
 }
@@ -64,11 +68,11 @@ fn boundaries_and_acceleration() {
     );
     assert_eq!(
         cycle.advance(1210, GraceCurve::default()),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
     assert_eq!(
         cycle.advance(1300, GraceCurve::default()),
-        DesiredPhase::Interference(Glitchiness::try_from(25.0).unwrap())
+        DesiredPhase::Interference(GraceCurve::default().level(0.5))
     );
     assert_eq!(
         cycle.advance(1390, GraceCurve::default()),
@@ -109,7 +113,7 @@ fn inactivity_crosses_deadline_and_resume_restarts_countdown() {
     );
     assert_eq!(
         cycle.advance(10200, GraceCurve::default()),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
 }
 
@@ -135,7 +139,7 @@ fn idle_startup_and_suspend_complete_break_without_tick() {
     );
     assert_eq!(
         cycle.advance(2300, GraceCurve::default()),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
     cycle.observe_idle_since(2400);
     cycle.observe_activity(5000);
@@ -163,7 +167,7 @@ fn pause_freezes_debt_hides_effects_and_resume_preserves_the_deadline() {
     cycle.resume(5010); // Idempotent: no extra time may disappear.
     assert_eq!(
         cycle.advance(5000, curve),
-        DesiredPhase::Interference(Glitchiness::try_from(25.0).unwrap())
+        DesiredPhase::Interference(GraceCurve::default().level(0.5))
     );
     assert_eq!(
         cycle.advance(5090, curve),
@@ -203,7 +207,7 @@ fn reset_clears_overtime_and_pause_without_accepting_old_idle_history() {
     assert_eq!(cycle.advance(10199, curve), DesiredPhase::Work);
     assert_eq!(
         cycle.advance(10200, curve),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
 }
 
@@ -219,7 +223,7 @@ fn pausing_a_completed_break_does_not_restart_work_without_input() {
     assert_eq!(cycle.snapshot(9100, curve).mode, Mode::Running);
     assert_eq!(
         cycle.advance(10300, curve),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
 }
 
@@ -236,7 +240,7 @@ fn input_during_a_paused_completed_break_is_not_lost_on_resume() {
     assert_eq!(snapshot.worked, 0);
     assert_eq!(
         cycle.advance(10200, curve),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
 }
 
@@ -298,11 +302,11 @@ fn configurable_durations_drive_boundaries_breaks_and_suspend() {
     assert_eq!(cycle.snapshot(59, curve).phase_remaining, 11);
     assert_eq!(
         cycle.advance(60, curve),
-        DesiredPhase::Interference(Glitchiness::ZERO)
+        DesiredPhase::Interference(GraceCurve::default().level(0.0))
     );
     assert_eq!(
         cycle.advance(65, curve),
-        DesiredPhase::Interference(Glitchiness::try_from(25.0).unwrap())
+        DesiredPhase::Interference(GraceCurve::default().level(0.5))
     );
     assert_eq!(
         cycle.advance(70, curve),

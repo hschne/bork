@@ -1,9 +1,4 @@
-use crate::{
-    artwork, config,
-    effect::{EffectKind, Settings},
-    hyprland::Hyprland,
-    recovery::DesktopTrial,
-};
+use crate::{artwork, config, effect::Settings, hyprland::Hyprland, recovery::DesktopTrial};
 use anyhow::{Context, Result};
 use eframe::egui;
 use std::{
@@ -14,6 +9,7 @@ use std::{
 
 mod capture;
 mod controls;
+mod curve;
 mod image;
 mod playback;
 // GL calls require a current eframe context and stay private to the sample scene.
@@ -32,7 +28,7 @@ pub fn open() -> Result<()> {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1120.0, 880.0])
+            .with_inner_size([1120.0, 950.0])
             .with_min_inner_size([640.0, 650.0]),
         ..Default::default()
     };
@@ -218,13 +214,8 @@ impl eframe::App for Preview {
         }
         let level = self.playback.level(&self.settings);
         let test_card = self.playback.test_card(&self.settings);
-        self.capture.update(
-            ctx,
-            level.value(),
-            self.settings.strength(),
-            test_card,
-            self.settings.effect(EffectKind::Tears).enabled(),
-        );
+        self.capture
+            .update(ctx, level.value(), self.settings.curve(), test_card);
         if self.playback.playing || (!test_card && self.settings.has_visible_effect_at(level)) {
             ctx.request_repaint_after(Duration::from_millis(33));
         } else if self.trial.is_some() || self.image_pending.is_some() {

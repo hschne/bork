@@ -3,7 +3,10 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 
+mod curve;
 mod shader;
+pub(crate) use curve::MIN_POINT_GAP;
+pub use curve::{CurvePoint, GraceCurve};
 
 /// One session seed, retained across tuning changes and shader recompilation.
 pub fn fresh_seed() -> Result<u32> {
@@ -37,37 +40,6 @@ impl TryFrom<f32> for Glitchiness {
             "Glitchiness must be 0–100"
         );
         Ok(Self(value))
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f32")]
-pub struct GraceCurve(f32);
-
-impl Default for GraceCurve {
-    fn default() -> Self {
-        Self(2.0)
-    }
-}
-
-impl TryFrom<f32> for GraceCurve {
-    type Error = anyhow::Error;
-    fn try_from(value: f32) -> Result<Self> {
-        ensure!(
-            value.is_finite() && (1.01..=5.0).contains(&value),
-            "Curve must be 1.01–5"
-        );
-        Ok(Self(value))
-    }
-}
-
-impl GraceCurve {
-    pub fn value(self) -> f32 {
-        self.0
-    }
-    /// `progress` comes from the cycle's elapsed grace fraction (0..1).
-    pub(crate) fn level(self, progress: f32) -> Glitchiness {
-        Glitchiness(100.0 * progress.powf(self.0))
     }
 }
 
@@ -149,36 +121,13 @@ impl Effect {
     }
 }
 
-/// Global gain, independent of per-effect tuning and cycle progression.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "f32")]
-struct Strength(f32);
-
-impl Default for Strength {
-    fn default() -> Self {
-        Self(1.0)
-    }
-}
-
-impl TryFrom<f32> for Strength {
-    type Error = anyhow::Error;
-    fn try_from(value: f32) -> Result<Self> {
-        ensure!(
-            value.is_finite() && (0.0..=1.0).contains(&value),
-            "Strength must be 0–1"
-        );
-        Ok(Self(value))
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     #[serde(default)]
     pub timing: crate::cycle::Timing,
-    curve: GraceCurve,
     #[serde(default)]
-    strength: Strength,
+    curve: GraceCurve,
     #[serde(default)]
     pub preview_image: Option<std::path::PathBuf>,
     tears: Effect,
@@ -198,7 +147,6 @@ impl Default for Settings {
         Self {
             timing: crate::cycle::Timing::default(),
             curve: GraceCurve::default(),
-            strength: Strength::default(),
             preview_image: None,
             tears: effect(5.0, 0.7),
             colour: effect(15.0, 0.65),
@@ -210,18 +158,10 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn strength(&self) -> f32 {
-        self.strength.0
-    }
-    pub fn set_strength(&mut self, strength: f32) -> Result<()> {
-        self.strength = Strength::try_from(strength)?;
-        Ok(())
-    }
-
     pub fn curve(&self) -> GraceCurve {
         self.curve
     }
-    pub fn set_curve(&mut self, curve: f32) -> Result<()> {
+    pub fn set_curve(&mut self, curve: [CurvePoint; 4]) -> Result<()> {
         self.curve = curve.try_into()?;
         Ok(())
     }
@@ -248,10 +188,9 @@ impl Settings {
 
     /// Whether the current tuning produces visible interference at this level.
     pub fn has_visible_effect_at(&self, level: Glitchiness) -> bool {
-        self.strength() > 0.0
-            && EffectKind::ALL
-                .into_iter()
-                .any(|kind| self.effect(kind).strength(level) > 0.0)
+        EffectKind::ALL
+            .into_iter()
+            .any(|kind| self.effect(kind).strength(level) > 0.0)
     }
 }
 

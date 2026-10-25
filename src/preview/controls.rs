@@ -1,4 +1,4 @@
-//! The player previews progression; settings expose only timing and global gain.
+//! The player previews progression; settings expose timing and the intensity curve.
 use super::{Preview, playback::DEMO_SECONDS};
 use crate::config;
 use eframe::egui::{self, Align, Layout};
@@ -103,12 +103,12 @@ impl Preview {
         if ui.available_width() >= 760.0 {
             ui.columns(2, |columns| {
                 self.timing(&mut columns[0]);
-                self.strength(&mut columns[1]);
+                self.curve(&mut columns[1]);
             });
         } else {
             self.timing(ui);
             ui.add_space(16.0);
-            self.strength(ui);
+            self.curve(ui);
         }
         ui.add_space(14.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -165,36 +165,20 @@ impl Preview {
         timing.break_seconds = rest.try_into().unwrap();
     }
 
-    fn strength(&mut self, ui: &mut egui::Ui) {
-        ui.strong("Interference");
-        ui.add_space(6.0);
-        let mut strength = self.settings.strength();
-        ui.horizontal(|ui| {
-            ui.label("Strength");
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.weak(
-                    ["Off", "Low", "Medium", "Strong", "Maximum"]
-                        [(strength * 4.0).round() as usize],
-                );
-            });
-        });
-        ui.spacing_mut().slider_width = (ui.available_width() - 8.0).max(60.0);
-        if ui
-            .add(
-                egui::Slider::new(&mut strength, 0.0..=1.0)
-                    .step_by(0.25)
-                    .show_value(false),
-            )
-            .changed()
-            && let Err(error) = self.settings.set_strength(strength)
-        {
-            self.status = error.to_string();
+    fn curve(&mut self, ui: &mut egui::Ui) {
+        match super::curve::show(
+            ui,
+            self.settings.curve(),
+            self.playback.grace_progress(&self.settings),
+            self.settings.timing.grace_seconds,
+        ) {
+            Ok(Some(curve)) => {
+                if let Err(error) = self.settings.set_curve(curve.points()) {
+                    self.status = error.to_string();
+                }
+            }
+            Ok(None) => (),
+            Err(error) => self.status = error.to_string(),
         }
-        ui.horizontal(|ui| {
-            ui.weak("Off");
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.weak("Maximum");
-            });
-        });
     }
 }

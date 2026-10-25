@@ -60,8 +60,9 @@ fn defaults_are_readable_without_creating_a_file_or_connecting_to_a_session() {
     assert!(list.contains("tears.maximum=0.7\n"));
     let values: Value = serde_json::from_str(&config.success(&["list", "--json"])).unwrap();
     assert_eq!(values["timing.break_seconds"], 300);
-    assert_eq!(values["curve"], 2.0);
-    assert_eq!(values.as_object().unwrap().len(), 21);
+    assert_eq!(values["curve"][0]["intensity"], 35.0);
+    assert_eq!(values["curve"][3]["intensity"], 100.0);
+    assert_eq!(values.as_object().unwrap().len(), 20);
     for (key, expected) in values.as_object().unwrap() {
         let actual: Value = serde_json::from_str(&config.success(&["get", key])).unwrap();
         assert_eq!(&actual, expected);
@@ -92,8 +93,13 @@ fn updates_preserve_other_values_and_unset_restores_only_one_default() {
     config.success(&["set", "timing.grace_seconds", "0"]);
     config.success(&["set", "tears.enabled", "false"]);
     config.success(&["set", "colour.maximum", "0.25"]);
-    config.success(&["set", "curve", "3.5"]);
-    config.success(&["set", "strength", "0.25"]);
+    let curve = json!([
+        {"progress":0.0,"intensity":20.0},
+        {"progress":0.3,"intensity":40.0},
+        {"progress":0.7,"intensity":70.0},
+        {"progress":1.0,"intensity":100.0}
+    ]);
+    config.success(&["set", "curve", &curve.to_string()]);
     config.success(&["set", "preview_image", "\"/tmp/desktop.png\""]);
     config.success(&["unset", "timing.break_seconds"]);
     let values: Value = serde_json::from_str(&config.success(&["list", "--json"])).unwrap();
@@ -101,8 +107,7 @@ fn updates_preserve_other_values_and_unset_restores_only_one_default() {
     assert_eq!(values["timing.grace_seconds"], 0);
     assert_eq!(values["tears.enabled"], false);
     assert_eq!(values["colour.maximum"], 0.25);
-    assert_eq!(values["curve"], 3.5);
-    assert_eq!(values["strength"], 0.25);
+    assert_eq!(values["curve"], curve);
     assert_eq!(values["preview_image"], "/tmp/desktop.png");
 }
 
@@ -125,8 +130,8 @@ fn invalid_updates_and_unknown_keys_leave_the_file_untouched() {
         vec!["set", "timing.work_seconds", "null"],
         vec!["set", "timing.work_seconds", "[1]"],
         vec!["set", "timing.work_seconds", "\"1200\""],
-        vec!["set", "strength", "1.1"],
-        vec!["set", "strength", "-0.1"],
+        vec!["get", "strength"],
+        vec!["set", "strength", "1"],
         vec!["set", "preview_image", "42"],
         vec!["set", "curve", "0"],
         vec!["set", "curve", "NaN"],

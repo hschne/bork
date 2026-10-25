@@ -4,9 +4,6 @@ fn constructors_and_json_enforce_the_same_ranges() {
     for value in [f32::NAN, f32::INFINITY, -0.1, 100.1] {
         assert!(Glitchiness::try_from(value).is_err());
     }
-    for value in [f32::NAN, f32::INFINITY, 1.0, 5.1] {
-        assert!(GraceCurve::try_from(value).is_err());
-    }
     for (entry, maximum) in [
         (100.0, 0.5),
         (-1.0, 0.5),
@@ -42,7 +39,9 @@ fn constructors_and_json_enforce_the_same_ranges() {
 fn rejected_edits_preserve_valid_tuning_and_disabled_effects_are_invisible() {
     let mut settings = Settings::default();
     let original = settings.clone();
-    assert!(settings.set_curve(0.0).is_err());
+    let mut invalid = settings.curve().points();
+    invalid[1].intensity = -1.0;
+    assert!(settings.set_curve(invalid).is_err());
     assert_eq!(settings, original);
     for kind in EffectKind::ALL {
         settings.set_effect(kind, Effect::new(false, 0.0, 1.0).unwrap());
@@ -135,40 +134,7 @@ fn bounded_smooth_monotonic_and_toggle() {
             .contains("bork")
     );
     assert!(Glitchiness::try_from(f32::NAN).is_err());
-    assert!(s.set_curve(f32::INFINITY).is_err());
-}
-
-#[test]
-fn global_strength_scales_tuning_without_rewriting_it() {
-    let mut settings = Settings::default();
-    let effect = settings.effect(EffectKind::Tears);
-    settings.set_strength(0.5).unwrap();
-    assert_eq!(settings.effect(EffectKind::Tears), effect);
-    assert!(
-        settings
-            .shader_body(Glitchiness::MAXIMUM)
-            .contains("TEARS = 0.34999999")
-    );
-    settings.set_strength(0.0).unwrap();
-    assert!(!settings.has_visible_effect_at(Glitchiness::MAXIMUM));
-    for invalid in [f32::NAN, f32::INFINITY, -0.1, 1.1] {
-        assert!(settings.set_strength(invalid).is_err());
-        assert_eq!(settings.strength(), 0.0);
-    }
-    let mut json = serde_json::to_value(Settings::default()).unwrap();
-    json.as_object_mut().unwrap().remove("strength");
-    json.as_object_mut().unwrap().remove("preview_image");
-    assert_eq!(
-        serde_json::from_value::<Settings>(json.clone()).unwrap(),
-        Settings::default()
-    );
-    for invalid in [
-        serde_json::json!(-0.1),
-        serde_json::json!(1.1),
-        serde_json::json!("1"),
-        serde_json::Value::Null,
-    ] {
-        json["strength"] = invalid;
-        assert!(serde_json::from_value::<Settings>(json.clone()).is_err());
-    }
+    let mut invalid = s.curve().points();
+    invalid[1].progress = f32::INFINITY;
+    assert!(s.set_curve(invalid).is_err());
 }

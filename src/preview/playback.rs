@@ -50,15 +50,19 @@ impl Playback {
     }
 
     pub fn level(&self, settings: &Settings) -> Glitchiness {
-        if self.position < GRACE_START {
-            Glitchiness::ZERO
-        } else if settings.timing.grace_seconds == 0 {
+        if self.test_card(settings) {
             Glitchiness::MAXIMUM
+        } else if let Some(progress) = self.grace_progress(settings) {
+            settings.curve().level(progress)
         } else {
-            settings.curve().level(
-                ((self.position - GRACE_START) / (OVERTIME_START - GRACE_START)).clamp(0.0, 1.0),
-            )
+            Glitchiness::ZERO
         }
+    }
+
+    pub fn grace_progress(&self, settings: &Settings) -> Option<f32> {
+        (self.position >= GRACE_START && !self.test_card(settings)).then(|| {
+            ((self.position - GRACE_START) / (OVERTIME_START - GRACE_START)).clamp(0.0, 1.0)
+        })
     }
 
     pub fn test_card(&self, settings: &Settings) -> bool {
@@ -73,15 +77,18 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn progression_uses_configured_curve_and_keeps_deadline_separate_from_strength() {
+    fn progression_uses_configured_curve_and_keeps_deadline_separate_from_intensity() {
         let mut settings = Settings::default();
         let mut playback = Playback::default();
         assert_eq!(playback.level(&settings), Glitchiness::ZERO);
         playback.seek(6.5);
-        assert_eq!(playback.level(&settings).value(), 25.0);
-        settings.set_curve(3.0).unwrap();
-        assert_eq!(playback.level(&settings).value(), 12.5);
-        settings.set_strength(0.0).unwrap();
+        assert_eq!(playback.level(&settings), settings.curve().level(0.5));
+        let mut points = settings.curve().points();
+        points[0].intensity = 5.0;
+        points[1].intensity = 10.0;
+        settings.set_curve(points).unwrap();
+        assert_eq!(playback.level(&settings), settings.curve().level(0.5));
+        assert_eq!(playback.grace_progress(&settings), Some(0.5));
         playback.seek(12.0);
         assert!(playback.test_card(&settings));
         assert_eq!(playback.level(&settings), Glitchiness::MAXIMUM);
