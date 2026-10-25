@@ -10,6 +10,7 @@ pub mod control;
 mod cycle;
 pub mod effect;
 pub mod hyprland;
+pub mod overtime;
 pub mod preview;
 pub mod recovery;
 pub mod runtime;

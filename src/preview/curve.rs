@@ -39,6 +39,9 @@ pub(super) fn show(
                 ui.id().with(("curve-point", i)),
                 Sense::click_and_drag(),
             );
+            if i == 0 {
+                super::capture::target("curve-start", &response);
+            }
             response.widget_info(|| {
                 egui::WidgetInfo::slider(
                     ui.is_enabled(),

@@ -7,7 +7,7 @@ die() { echo "Error: $*" >&2; exit 1; }
 function main() {
   [[ $# == 0 ]] || { usage; exit 1; }
   local output scratch native runtime="" status cleanup
-  output="$PWD/.agents/evidence/debian-session"
+  output="${BORK_EVIDENCE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/bork-debian.XXXXXX")}"
   mkdir -p "$output"
   if [[ "${BORK_VERIFY_IMAGE_READY:-}" != 1 ]]; then
     docker buildx build --load --build-arg "BUILD_JOBS=${CARGO_BUILD_JOBS:-2}" --target verify -t bork-verify:local . >"$output/image-build.log" 2>&1
@@ -40,7 +40,7 @@ function main() {
   [[ "$status" == 0 ]] || die "Debian proof failed"
   trap - EXIT
   rm -rf -- "$scratch"
-  echo "Debian release binary passed the real protocol/background/display proof against isolated Hyprland."
+  echo "Debian release binary passed against isolated Hyprland. Results: $output"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

@@ -83,7 +83,11 @@ pub fn run() -> Result<()> {
                                 seed,
                             )?,
                         },
-                        Publication::TestCard(remaining) => DisplayState::TestCard { remaining },
+                        Publication::TestCard(remaining) => DisplayState::TestCard {
+                            remaining,
+                            total: u64::from(tuning.timing.break_seconds.get()),
+                            appearance: tuning.overtime.clone(),
+                        },
                     };
                     guardian.set_display(state)?;
                     published = Some(next);

@@ -51,7 +51,7 @@ pub fn open() -> Result<()> {
                 status: String::new(),
                 trial: None,
                 confirm_trial: false,
-                capture: Capture::new(),
+                capture: Capture::new(&cc.egui_ctx),
                 image_pending: None,
             };
             if let Some(path) = preview.settings.preview_image.clone() {
@@ -80,7 +80,12 @@ impl Preview {
         let hypr = Hyprland::from_env()?;
         hypr.check()?;
         self.trial = Some(if self.playback.test_card(&self.settings) {
-            DesktopTrial::start_card(&hypr, u64::from(self.settings.timing.break_seconds.get()))?
+            DesktopTrial::start_card(
+                &hypr,
+                u64::from(self.settings.timing.break_seconds.get()),
+                u64::from(self.settings.timing.break_seconds.get()),
+                self.settings.overtime.clone(),
+            )?
         } else {
             DesktopTrial::start(
                 &hypr,

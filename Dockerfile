@@ -9,23 +9,20 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY assets ./assets
 RUN cargo build --release --locked
-RUN mkdir /artifact && cp target/release/bork /artifact/ \
-    && readelf -l /artifact/bork > /artifact/elf-program-headers.txt \
-    && readelf -d /artifact/bork > /artifact/elf-dynamic.txt \
-    && ldd /artifact/bork > /artifact/ldd.txt
+RUN install -Dm755 target/release/bork /artifact/bork \
+    && install -Dm644 assets/overtime.png /artifact/assets/overtime.png
 
 # `docker build --target artifact --output type=local,dest=dist .`
 FROM scratch AS artifact
 COPY --from=build /artifact/ /
 COPY LICENSE THIRD_PARTY_LICENSES.txt README.md /
-COPY docs /docs/
 COPY assets/intermission.png /assets/intermission.png
 
 # Disposable second-distribution GUI/runtime verification, not the shipped artifact.
 FROM build AS verify
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libwayland-client0 libwayland-cursor0 libxkbcommon0 libxkbcommon-x11-0 libegl1 libgl1 libgl1-mesa-dri \
-    libx11-6 libxcursor1 libxi6 libxrandr2 xvfb xauth xdotool grim \
+    libx11-6 libxcursor1 libxi6 libxrandr2 fonts-dejavu-core xvfb xauth xdotool grim \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add clippy rustfmt
 COPY tests ./tests

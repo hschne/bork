@@ -1,7 +1,9 @@
-name: Check
+name: CI
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -10,40 +12,70 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Build pinned Linux verification environment
+      - name: Build verification environment
         run: docker build --target verify -t bork-verify:ci .
-      - name: Formatting, linting, deterministic tests
+      - name: Check
         run: >-
           docker run --rm --network none bork-verify:ci bash -c
           'cargo fmt --all -- --check &&
           cargo clippy --locked --all-targets -- -D warnings &&
           cargo test --locked'
-      - name: Software OpenGL preview, controls and settings
+      - name: Test preview
         run: >-
           docker run --rm --network none --read-only --tmpfs /tmp --tmpfs /run
           bork-verify:ci bash /build/tests/preview-smoke.sh
-          /artifact/bork /tmp/evidence
-      - name: Produce executable without publishing
+          /artifact/bork /tmp/preview
+      - name: Build distribution
         run: docker build --target artifact --output type=local,dest=dist .
-      - name: Package Linux executable and documentation
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           version="$(./dist/bork --version | awk '{print $2}')"
-          archive="bork-${version}-x86_64-unknown-linux-gnu.tar.gz"
-          mkdir -p .ci-evidence
-          tar -C dist -czf ".ci-evidence/$archive" \
-            bork LICENSE THIRD_PARTY_LICENSES.txt README.md docs assets
-          cd .ci-evidence
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
+          archive="bork-${version}-${TARGET}.tar.gz"
+          mkdir -p "$RUNNER_TEMP/packages"
+          tar -C dist -czf "$RUNNER_TEMP/packages/$archive" \
+            bork LICENSE THIRD_PARTY_LICENSES.txt README.md assets
+          cd "$RUNNER_TEMP/packages"
           sha256sum "$archive" > "$archive.sha256"
-      - name: Upload release candidate without publishing
+      - name: Upload build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: bork-x86_64-unknown-linux-gnu
-          path: |
-            .ci-evidence/*.tar.gz
-            .ci-evidence/*.sha256
-          include-hidden-files: true
+          name: bork-${{ matrix.target }}
+          path: ${{ runner.temp }}/packages/*
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: bork-*
+          merge-multiple: true
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256
+          --repo "$GITHUB_REPOSITORY" --verify-tag
+          --title "$GITHUB_REF_NAME" --generate-notes

@@ -11,9 +11,17 @@ use std::{
 
 #[derive(Serialize, Deserialize)]
 pub enum TrialRequest {
-    Start { shader: String },
-    StartCard { remaining: u64 },
-    Cancel { id: u64 },
+    Start {
+        shader: String,
+    },
+    StartCard {
+        remaining: u64,
+        total: u64,
+        appearance: crate::overtime::Overtime,
+    },
+    Cancel {
+        id: u64,
+    },
 }
 
 pub(super) type TrialReply = std::result::Result<u64, String>;
@@ -46,8 +54,20 @@ impl DesktopTrial {
         Self::start_request(hypr, TrialRequest::Start { shader })
     }
 
-    pub fn start_card(hypr: &Hyprland, remaining: u64) -> Result<Self> {
-        Self::start_request(hypr, TrialRequest::StartCard { remaining })
+    pub fn start_card(
+        hypr: &Hyprland,
+        remaining: u64,
+        total: u64,
+        appearance: crate::overtime::Overtime,
+    ) -> Result<Self> {
+        Self::start_request(
+            hypr,
+            TrialRequest::StartCard {
+                remaining,
+                total,
+                appearance,
+            },
+        )
     }
 
     fn start_request(hypr: &Hyprland, request: TrialRequest) -> Result<Self> {

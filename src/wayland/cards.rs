@@ -1,5 +1,5 @@
 //! Software test cards and exclusive ordinary input on all outputs.
-use crate::artwork;
+use crate::overtime::{Overtime, Renderer};
 use anyhow::{Context, Result, ensure};
 use smithay_client_toolkit::{
     compositor::CompositorState,
@@ -35,6 +35,7 @@ struct Card {
     layer: LayerSurface,
     size: Option<(u32, u32)>,
     scale: i32,
+    background: Option<image::RgbaImage>,
 }
 struct State {
     registry: RegistryState,
@@ -48,6 +49,8 @@ struct State {
     cards: Vec<Card>,
     closed_outputs: Vec<(wl_output::WlOutput, std::time::Instant)>,
     remaining: u64,
+    total: u64,
+    renderer: Renderer,
     error: Option<String>,
 }
 
@@ -63,11 +66,12 @@ pub(super) fn check() -> Result<()> {
 }
 
 impl TestCards {
-    pub fn show(remaining: u64) -> Result<Self> {
-        super::connect(move || Self::connect_inner(remaining))
+    pub fn show(remaining: u64, total: u64, appearance: &Overtime) -> Result<Self> {
+        let renderer = Renderer::load(appearance)?;
+        super::connect(move || Self::connect_inner(remaining, total, renderer))
     }
 
-    fn connect_inner(remaining: u64) -> Result<Self> {
+    fn connect_inner(remaining: u64, total: u64, renderer: Renderer) -> Result<Self> {
         let connection = Connection::connect_to_env().context("Connecting to Wayland")?;
         let (globals, mut queue) = registry_queue_init(&connection)?;
         let qh = queue.handle();
@@ -87,6 +91,8 @@ impl TestCards {
             cards: Vec::new(),
             closed_outputs: Vec::new(),
             remaining,
+            total,
+            renderer,
             error: None,
         };
         for seat in state.seats.seats().collect::<Vec<_>>() {
@@ -120,9 +126,17 @@ impl TestCards {
         Ok(())
     }
 
-    pub fn countdown(&mut self, remaining: u64) -> Result<()> {
-        if self.state.remaining != remaining {
+    pub fn countdown(&mut self, remaining: u64, total: u64, appearance: &Overtime) -> Result<()> {
+        let changed = self.state.renderer.settings() != appearance;
+        if changed {
+            self.state.renderer = Renderer::load(appearance)?;
+            for card in &mut self.state.cards {
+                card.background = None;
+            }
+        }
+        if changed || self.state.remaining != remaining || self.state.total != total {
             self.state.remaining = remaining;
+            self.state.total = total;
             for index in 0..self.state.cards.len() {
                 self.state.draw(index)?;
             }
@@ -156,11 +170,12 @@ impl State {
             layer,
             size: None,
             scale: 1,
+            background: None,
         });
     }
 
     fn draw(&mut self, index: usize) -> Result<()> {
-        let card = &self.cards[index];
+        let card = &mut self.cards[index];
         let Some((width, height)) = card.size else {
             return Ok(());
         };
@@ -174,7 +189,18 @@ impl State {
             width > 0 && height > 0 && u64::from(width) * u64::from(height) <= 33_554_432,
             "Unsupported output dimensions {width}x{height}"
         );
-        let image = artwork::test_card(1280, 720, self.remaining);
+        if card
+            .background
+            .as_ref()
+            .is_none_or(|image| image.dimensions() != (width, height))
+        {
+            card.background = Some(self.renderer.background(width, height)?);
+        }
+        let image = self.renderer.paint(
+            card.background.as_ref().unwrap(),
+            self.remaining,
+            self.total,
+        );
         let (buffer, canvas) = self.pool.create_buffer(
             width as i32,
             height as i32,

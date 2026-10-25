@@ -2,7 +2,6 @@
 mod support;
 
 use bork::{
-    artwork,
     effect::{Glitchiness, Settings},
     hyprland::Hyprland,
     recovery::{DisplayState, Message},
@@ -209,7 +208,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
         );
         capture(&format!("desktop-level-{level:.0}.png"), "");
     }
-    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
+    owner.send(Message::Display(DisplayState::TestCard {
+        remaining: 272,
+        total: 300,
+        appearance: bork::overtime::Overtime::default(),
+    }));
     owner.heartbeat_for(Duration::from_millis(250));
     let start = graphics_counters();
     owner.heartbeat_for(Duration::from_millis(500));
@@ -221,7 +224,10 @@ fn compositor_shader_overlay_and_crash_recovery() {
     .unwrap();
     let (w, h, bytes) = image(&capture("overlay-two-outputs.png", ""));
     assert_eq!((w, h), (2560, 720));
-    let expected = artwork::test_card(1280, 720, 272);
+    let expected = bork::overtime::Renderer::load(&bork::overtime::Overtime::default())
+        .unwrap()
+        .render(1280, 720, 272, 300)
+        .unwrap();
     // Check characteristic colours on BOTH outputs, including the opaque central panel.
     for output in [0, 1280] {
         for (x, y) in [
@@ -294,7 +300,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
     println!("Keyboard and pointer-only interruption verified.");
 
     let mut owner = Guardian::start();
-    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
+    owner.send(Message::Display(DisplayState::TestCard {
+        remaining: 272,
+        total: 300,
+        appearance: bork::overtime::Overtime::default(),
+    }));
     configure_output(&hypr, "proof-two,1280x720@30,1280x0,1.6,transform,1");
     owner.heartbeat_for(Duration::from_millis(500));
     assert_card(&capture("overlay-rotated-scaled.png", "proof-two"));
@@ -351,7 +361,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
     );
     target.unlock(session);
     assert!(!hypr.locked().unwrap());
-    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
+    owner.send(Message::Display(DisplayState::TestCard {
+        remaining: 272,
+        total: 300,
+        appearance: bork::overtime::Overtime::default(),
+    }));
     owner.heartbeat_for(Duration::from_millis(200));
     let session = target.lock();
     owner.heartbeat_for(Duration::from_millis(400));
@@ -366,7 +380,11 @@ fn compositor_shader_overlay_and_crash_recovery() {
     let app =
         std::env::var_os("BORK_TEST_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_bork").into());
     let mut owner = Guardian::start();
-    owner.send(Message::Display(DisplayState::TestCard { remaining: 272 }));
+    owner.send(Message::Display(DisplayState::TestCard {
+        remaining: 272,
+        total: 300,
+        appearance: bork::overtime::Overtime::default(),
+    }));
     owner.heartbeat_for(Duration::from_millis(200));
     assert!(Command::new(&app).arg("reset").status().unwrap().success());
     drop(owner);
@@ -615,7 +633,10 @@ fn verify_randomness(owner: &mut Guardian) {
 
 fn assert_card(path: &std::path::Path) {
     let (w, h, bytes) = image(path);
-    let expected = artwork::test_card(w, h, 272);
+    let expected = bork::overtime::Renderer::load(&bork::overtime::Overtime::default())
+        .unwrap()
+        .render(w as u32, h as u32, 272, 300)
+        .unwrap();
     for (x, y) in [
         (w / 10, h / 5),
         (w * 3 / 10, h / 5),

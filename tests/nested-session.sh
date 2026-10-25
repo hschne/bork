@@ -81,11 +81,11 @@ function main() {
   app="${BORK_TEST_BINARY:-$root/target/debug/bork}"
   app="$(realpath "$app")"
   [[ -x "$app" ]] || die "Run cargo build first, or set BORK_TEST_BINARY"
-  output="${BORK_EVIDENCE_DIR:-$root/.agents/evidence}"
+  output="${BORK_EVIDENCE_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/bork-display.XXXXXX")}"
   proof="$(mise exec -- cargo test --test display --no-run --message-format=json | sed -n '/"name":"display"/s/.*"executable":"\([^"]*\)".*/\1/p')"
   [[ -x "$proof" ]] || die "Display test executable missing"
   grim="$(readlink -f "$(command -v grim)")"
-  runtime="$(mktemp -d /tmp/sl.XXXX)"
+  runtime="$(mktemp -d "${TMPDIR:-/tmp}/bork-session.XXXXXX")"
   mkdir -p "$runtime/home/.cache"
   if [[ -n "${BORK_RUNTIME_FILE:-}" ]]; then printf '%s\n' "$runtime" >"$BORK_RUNTIME_FILE"; fi
   sway="$(nix build nixpkgs#sway-unwrapped --no-link --print-out-paths)/bin/sway"
@@ -127,7 +127,7 @@ EOF
   done
   local status=0
   env -u WAYLAND_DISPLAY -u DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u HYPRLAND_INSTANCE_SIGNATURE \
-    PATH="$coreutils" TMPDIR="$runtime" XDG_RUNTIME_DIR="$runtime" HOME="$runtime/home" XDG_CACHE_HOME="$runtime/home/.cache" \
+    PATH="$coreutils" TMPDIR="$runtime" XDG_RUNTIME_DIR="$runtime" HOME="$runtime/home" XDG_DATA_HOME="$runtime/home/.local/share" XDG_CACHE_HOME="$runtime/home/.cache" \
     NIX_LD="$loader" NIX_LD_LIBRARY_PATH="$library_path" \
     HYPRLAND_NO_SD_NOTIFY=1 AQ_DRM_DEVICES='' LD_LIBRARY_PATH="$aquamarine/lib:${LD_LIBRARY_PATH:-}" BORK_GRIM="$grim" BORK_TEST_BINARY="$app" \
     "$sandbox" --ro-bind / / --tmpfs /run --ro-bind "$(readlink -f /run/opengl-driver)" /run/opengl-driver \
@@ -137,7 +137,7 @@ EOF
   mkdir -p "$output"
   cp "$runtime/"*.log "$output/"
   for proof in "$runtime/"*.png "$runtime/"*.json; do [[ ! -f "$proof" ]] || cp "$proof" "$output/"; done
-  echo "Isolated session files: $runtime"
+  echo "Isolated session: $runtime; results: $output"
   return "$status"
 }
 

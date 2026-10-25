@@ -17,6 +17,8 @@ pub(super) struct Scene {
     sample: Arc<artwork::Canvas>,
     bundled: Arc<artwork::Canvas>,
     card: Arc<artwork::Canvas>,
+    card_renderer: crate::overtime::Renderer,
+    card_background: image::RgbaImage,
     card_seconds: u32,
     start: Instant,
     seed: u32,
@@ -25,13 +27,20 @@ pub(super) struct Scene {
 impl Scene {
     pub(super) fn new(gl: &eframe::glow::Context, settings: &Settings) -> Result<Self> {
         let sample = Arc::new(artwork::desktop());
+        let card_renderer = crate::overtime::Renderer::load(&settings.overtime)?;
+        let card_background = card_renderer.background(1280, 720)?;
+        let seconds = settings.timing.break_seconds.get();
+        let card =
+            Arc::new(card_renderer.paint(&card_background, u64::from(seconds), u64::from(seconds)));
         Ok(Self {
             renderer: Arc::new(Mutex::new(Renderer::new(gl, settings, Glitchiness::ZERO)?)),
             error: Arc::new(Mutex::new(None)),
             sample: sample.clone(),
             bundled: sample,
-            card: Arc::new(artwork::test_card(1280, 720, 300)),
-            card_seconds: 300,
+            card,
+            card_renderer,
+            card_background,
+            card_seconds: seconds,
             start: Instant::now(),
             seed: effect::fresh_seed()?,
         })
@@ -62,9 +71,8 @@ impl Scene {
     ) -> egui::Rect {
         let seconds = settings.timing.break_seconds.get();
         if seconds != self.card_seconds {
-            self.card = Arc::new(artwork::test_card_for_duration(
-                1280,
-                720,
+            self.card = Arc::new(self.card_renderer.paint(
+                &self.card_background,
                 u64::from(seconds),
                 u64::from(seconds),
             ));

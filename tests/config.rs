@@ -62,11 +62,17 @@ fn defaults_are_readable_without_creating_a_file_or_connecting_to_a_session() {
     assert_eq!(values["timing.break_seconds"], 300);
     assert_eq!(values["curve"][0]["intensity"], 35.0);
     assert_eq!(values["curve"][3]["intensity"], 100.0);
-    assert_eq!(values.as_object().unwrap().len(), 20);
+    assert_eq!(values.as_object().unwrap().len(), 29);
     for (key, expected) in values.as_object().unwrap() {
         let actual: Value = serde_json::from_str(&config.success(&["get", key])).unwrap();
         assert_eq!(&actual, expected);
     }
+    assert!(
+        values["overtime.background.image"]
+            .as_str()
+            .unwrap()
+            .ends_with("/assets/overtime.png")
+    );
     assert!(!config.path().exists());
 }
 

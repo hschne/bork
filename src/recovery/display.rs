@@ -62,7 +62,15 @@ impl DisplayOwner {
     pub(super) fn trial(&mut self, request: TrialRequest) -> Result<TrialDecision> {
         let state = match request {
             TrialRequest::Start { shader } => DisplayState::Interference { shader },
-            TrialRequest::StartCard { remaining } => DisplayState::TestCard { remaining },
+            TrialRequest::StartCard {
+                remaining,
+                total,
+                appearance,
+            } => DisplayState::TestCard {
+                remaining,
+                total,
+                appearance,
+            },
             TrialRequest::Cancel { id } => {
                 if self.trial.as_ref().is_some_and(|trial| trial.id == id) {
                     self.trial = None;
@@ -133,12 +141,16 @@ impl DisplayOwner {
                     journal::install(&self.path, &self.hypr, &shader)
                 }
             }
-            DisplayState::TestCard { remaining } => {
+            DisplayState::TestCard {
+                remaining,
+                total,
+                appearance,
+            } => {
                 journal::restore(&self.path)?;
                 if let Some(cards) = self.cards.as_mut() {
-                    cards.countdown(remaining)
+                    cards.countdown(remaining, total, &appearance)
                 } else {
-                    self.cards = Some(TestCards::show(remaining)?);
+                    self.cards = Some(TestCards::show(remaining, total, &appearance)?);
                     Ok(())
                 }
             }

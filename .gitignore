@@ -1,8 +1,2 @@
-# Retain the product contract and visual references despite user-global ignores.
-!/.agents/
-!/.agents/**
-
-/.agents/evidence/
 /target/
 /dist/
-/.ci-evidence/

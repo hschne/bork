@@ -122,7 +122,7 @@ impl Effect {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Settings {
     #[serde(default)]
     pub timing: crate::cycle::Timing,
@@ -130,6 +130,7 @@ pub struct Settings {
     curve: GraceCurve,
     #[serde(default)]
     pub preview_image: Option<std::path::PathBuf>,
+    pub overtime: crate::overtime::Overtime,
     tears: Effect,
     colour: Effect,
     bands: Effect,
@@ -148,6 +149,7 @@ impl Default for Settings {
             timing: crate::cycle::Timing::default(),
             curve: GraceCurve::default(),
             preview_image: None,
+            overtime: crate::overtime::Overtime::default(),
             tears: effect(5.0, 0.7),
             colour: effect(15.0, 0.65),
             bands: effect(30.0, 0.8),

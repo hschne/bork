@@ -175,6 +175,126 @@ fn reset_falls_back_to_recovery_when_the_timer_does_not_reply() {
 }
 
 #[test]
+fn break_format_displays_each_state_and_uses_the_break_countdown() {
+    for (state, seconds, expected) in [
+        (State::Running, 300, "05:00 LEFT"),
+        (State::Running, 65, "01:05 LEFT"),
+        (State::Running, 0, "00:00 LEFT"),
+        (State::Running, 6000, "100:00 LEFT"),
+        (State::Resting, 0, "BREAK COMPLETE"),
+        (State::Paused, 300, "BORK PAUSED"),
+        (State::Stopped, 300, "BORK STOPPED"),
+    ] {
+        let session = Session::new();
+        let listener = session.listener();
+        let peer = thread::spawn(move || {
+            let mut stream = accept(listener);
+            let mut bytes = Vec::new();
+            stream.read_to_end(&mut bytes).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<TimerCommand>(&bytes).unwrap(),
+                TimerCommand::Status
+            );
+            let status = Status {
+                state,
+                remaining_seconds: Some(1338),
+                break_remaining_seconds: Some(seconds),
+                ..Status::stopped()
+            };
+            serde_json::to_writer(&mut stream, &Ok::<_, String>(status)).unwrap();
+        });
+        let output = session
+            .command("status")
+            .args(["--format", "break"])
+            .output()
+            .unwrap();
+        peer.join().unwrap();
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            format!("{expected}\n")
+        );
+    }
+}
+
+#[test]
+fn break_format_reports_stopped_without_a_timer_and_unavailable_without_a_session() {
+    let session = Session::new();
+    let output = session
+        .command("status")
+        .args(["--format", "break"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"BORK STOPPED\n");
+    assert!(output.stderr.is_empty());
+
+    let output = session
+        .command("status")
+        .args(["--format", "break"])
+        .env_remove("HYPRLAND_INSTANCE_SIGNATURE")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(output.stdout, b"BORK UNAVAILABLE\n");
+    assert!(!output.stderr.is_empty());
+}
+
+#[test]
+fn break_format_displays_unavailable_on_invalid_replies_and_keeps_the_error_exit_status() {
+    use std::io::Write;
+    let incomplete = Status {
+        state: State::Running,
+        ..Status::stopped()
+    };
+    for reply in [
+        b"not JSON".to_vec(),
+        serde_json::to_vec(&Err::<Status, _>("Timer unavailable")).unwrap(),
+        serde_json::to_vec(&Ok::<_, String>(incomplete)).unwrap(),
+    ] {
+        let session = Session::new();
+        let listener = session.listener();
+        let peer = thread::spawn(move || {
+            let mut stream = accept(listener);
+            stream.read_to_end(&mut Vec::new()).unwrap();
+            stream.write_all(&reply).unwrap();
+        });
+        let output = session
+            .command("status")
+            .args(["--format", "break"])
+            .output()
+            .unwrap();
+        peer.join().unwrap();
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, b"BORK UNAVAILABLE\n");
+        assert!(!output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn status_format_defaults_to_json_and_rejects_unknown_formats() {
+    let session = Session::new();
+    let output = session
+        .command("status")
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Status>(&output.stdout).unwrap(),
+        Status::stopped()
+    );
+    let output = session
+        .command("status")
+        .args(["--format", "typo"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
 fn the_old_stop_command_is_replaced_rather_than_aliased() {
     let session = Session::new();
     let output = session.command("stop").output().unwrap();

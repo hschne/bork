@@ -63,8 +63,14 @@ pub enum Message {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DisplayState {
     Work,
-    Interference { shader: String },
-    TestCard { remaining: u64 },
+    Interference {
+        shader: String,
+    },
+    TestCard {
+        remaining: u64,
+        total: u64,
+        appearance: crate::overtime::Overtime,
+    },
 }
 
 pub fn stop(path: &Path) -> Result<()> {

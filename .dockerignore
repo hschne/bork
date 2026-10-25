@@ -8,8 +8,6 @@
 !LICENSE
 !THIRD_PARTY_LICENSES.txt
 !README.md
-!docs/
-!docs/**
 !tests/
 !tests/**
 !Dockerfile

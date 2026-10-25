@@ -1,6 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bork::{config, control, hyprland::Hyprland, recovery};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::{io::Write, path::PathBuf};
 
 #[derive(Parser)]
@@ -25,8 +25,11 @@ enum Action {
         #[command(subcommand)]
         command: ConfigAction,
     },
-    /// Print the background timer status as one JSON object.
-    Status,
+    /// Print the background timer status as JSON or a display-ready break label.
+    Status {
+        #[arg(long, value_enum, default_value_t = StatusFormat::Json)]
+        format: StatusFormat,
+    },
     /// Freeze work debt and remove interference/test cards.
     Pause,
     /// Continue the paused timer with its preserved work debt.
@@ -35,6 +38,12 @@ enum Action {
     Reset,
     #[command(hide = true)]
     Guardian { runtime: PathBuf, socket: PathBuf },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum StatusFormat {
+    Json,
+    Break,
 }
 
 #[derive(Subcommand)]
@@ -77,10 +86,10 @@ fn main() -> Result<()> {
         }
         Some(Action::Preview) => bork::preview::open(),
         Some(Action::Config { command }) => configure(command),
-        Some(Action::Status) => timer(control::Command::Status),
-        Some(Action::Pause) => timer(control::Command::Pause),
-        Some(Action::Resume) => timer(control::Command::Resume),
-        Some(Action::Reset) => timer(control::Command::Reset),
+        Some(Action::Status { format }) => timer(control::Command::Status, format),
+        Some(Action::Pause) => timer(control::Command::Pause, StatusFormat::Json),
+        Some(Action::Resume) => timer(control::Command::Resume, StatusFormat::Json),
+        Some(Action::Reset) => timer(control::Command::Reset, StatusFormat::Json),
         Some(Action::Guardian { runtime, socket }) => recovery::run_guardian(&runtime, socket),
         None => bork::background::run(),
     }
@@ -111,9 +120,34 @@ fn configure(command: ConfigAction) -> Result<()> {
     Ok(())
 }
 
-fn timer(command: control::Command) -> Result<()> {
-    let status = control::execute(&Hyprland::from_env()?.runtime_directory()?, command)?;
-    serde_json::to_writer(std::io::stdout().lock(), &status)?;
-    println!();
+fn timer(command: control::Command, format: StatusFormat) -> Result<()> {
+    let status = (|| control::execute(&Hyprland::from_env()?.runtime_directory()?, command))();
+    let mut stdout = std::io::stdout().lock();
+    match format {
+        StatusFormat::Json => {
+            serde_json::to_writer(&mut stdout, &status?)?;
+            writeln!(stdout)?;
+        }
+        StatusFormat::Break => {
+            let text = status.and_then(|status| match status.state {
+                control::State::Running => {
+                    let seconds = status
+                        .break_remaining_seconds
+                        .context("Timer status is missing the break countdown")?;
+                    Ok(format!("{:02}:{:02} LEFT", seconds / 60, seconds % 60))
+                }
+                control::State::Resting => Ok("BREAK COMPLETE".to_owned()),
+                control::State::Paused => Ok("BORK PAUSED".to_owned()),
+                control::State::Stopped => Ok("BORK STOPPED".to_owned()),
+            });
+            match text {
+                Ok(text) => writeln!(stdout, "{text}")?,
+                Err(error) => {
+                    writeln!(stdout, "BORK UNAVAILABLE")?;
+                    return Err(error);
+                }
+            }
+        }
+    }
     Ok(())
 }

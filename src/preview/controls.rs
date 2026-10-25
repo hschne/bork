@@ -60,11 +60,14 @@ impl Preview {
             let width = (ui.available_width() - 210.0).max(60.0);
             ui.scope(|ui| {
                 ui.spacing_mut().slider_width = width;
-                if ui
+                let response = ui
                     .add(egui::Slider::new(&mut position, 0.0..=DEMO_SECONDS).show_value(false))
-                    .on_hover_text("Preview timeline")
-                    .changed()
-                {
+                    .on_hover_text("Preview timeline");
+                if response.clicked() || response.drag_started() {
+                    response.request_focus();
+                }
+                super::capture::target("timeline", &response);
+                if response.changed() {
                     self.playback.seek(position);
                 }
             });
@@ -79,9 +82,13 @@ impl Preview {
                             Err(error) => format!("Recovery error: {error:#}"),
                         };
                     }
-                } else if ui.button("Live Preview").clicked() {
-                    self.playback.pause();
-                    self.confirm_trial = true;
+                } else {
+                    let response = ui.button("Live Preview");
+                    super::capture::target("live-preview", &response);
+                    if response.clicked() {
+                        self.playback.pause();
+                        self.confirm_trial = true;
+                    }
                 }
             });
         });
@@ -112,7 +119,9 @@ impl Preview {
         }
         ui.add_space(14.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Save settings").clicked() {
+            let response = ui.button("Save settings");
+            super::capture::target("save", &response);
+            if response.clicked() {
                 self.status = match config::save(&self.path, &self.settings) {
                     Ok(()) => "Settings saved.".into(),
                     Err(error) => format!("Save failed: {error:#}"),

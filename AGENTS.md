@@ -1,13 +1,14 @@
 # Bork
 
-For implementation, read `.agents/SPEC.md`; its assets are the visual reference. `README.md` owns build/run commands, host requirements, and operational caveats.
+## Verification
 
-## Working style
+- Use `mise.toml` for toolchain and tasks. Run `mise run check` for Rust changes and `mise run release` for distribution changes; native Nix builds do not verify the shipped executable.
+- For graphics development on NixOS, use `nix develop path:./nix`; using the repository root copies build outputs into the Nix store.
+- Run relevant display tests in isolated sessions, not the full display matrix unless requested. Active-desktop effects and persistent system configuration changes require approval.
+- Put temporary logs, captures, and test sessions in the system temporary directory; reserve `dist/` for deployable outputs.
 
-- Keep changes focused and hand them back promptly for user testing. Run full verification matrices only when the user explicitly requests them.
-- Keep builds within 50% of available CPU capacity.
-- Keep temporary logs, screenshots, and build outputs in ignored directories; do not create progress journals or verification handoffs by default.
+## Invariants
 
-## Safety
-
-Do not change persistent system configuration or enable disruptive effects on the active desktop without approval. Use isolated sessions for display tests.
+- Only the guardian mutates the desktop; keep timing and effect calculation independent of compositor state.
+- Journal previous compositor settings before mutation. Restore only values Bork still owns, preserving external changes.
+- Keep status and emergency reset independent of graphics initialization, including when graphics configuration is broken.
