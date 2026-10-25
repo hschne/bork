@@ -1,5 +1,5 @@
 //! A compressed cycle clock; shader animation keeps its ordinary wall clock.
-use crate::effect::{Glitchiness, Settings};
+use crate::{config::Settings, effect::Glitchiness};
 use std::time::Instant;
 
 pub(super) const DEMO_SECONDS: f32 = 15.0;
@@ -53,7 +53,7 @@ impl Playback {
         if self.test_card(settings) {
             Glitchiness::MAXIMUM
         } else if let Some(progress) = self.grace_progress(settings) {
-            settings.curve().level(progress)
+            settings.curve.level(progress)
         } else {
             Glitchiness::ZERO
         }
@@ -82,12 +82,12 @@ mod tests {
         let mut playback = Playback::default();
         assert_eq!(playback.level(&settings), Glitchiness::ZERO);
         playback.seek(6.5);
-        assert_eq!(playback.level(&settings), settings.curve().level(0.5));
-        let mut points = settings.curve().points();
+        assert_eq!(playback.level(&settings), settings.curve.level(0.5));
+        let mut points = settings.curve.points();
         points[0].intensity = 5.0;
         points[1].intensity = 10.0;
-        settings.set_curve(points).unwrap();
-        assert_eq!(playback.level(&settings), settings.curve().level(0.5));
+        settings.curve = points.try_into().unwrap();
+        assert_eq!(playback.level(&settings), settings.curve.level(0.5));
         assert_eq!(playback.grace_progress(&settings), Some(0.5));
         playback.seek(12.0);
         assert!(playback.test_card(&settings));

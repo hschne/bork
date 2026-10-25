@@ -1,5 +1,9 @@
 # Bork
 
+## Documentation
+
+- Never add documentation files. Put explanations in the conversation instead.
+
 ## Verification
 
 - Use `mise.toml` for toolchain and tasks. Run `mise run check` for Rust changes and `mise run release` for distribution changes; native Nix builds do not verify the shipped executable.

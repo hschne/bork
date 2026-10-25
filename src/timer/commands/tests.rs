@@ -1,8 +1,7 @@
 use super::*;
 use crate::{
     control::{Phase, State},
-    cycle::BreakCycle,
-    effect::GraceCurve,
+    timer::Timer,
 };
 use std::{net::Shutdown, thread, time::Instant};
 
@@ -11,7 +10,7 @@ fn requests_apply_to_the_cycle_and_reply_with_json_snapshots() {
     let directory = tempfile::tempdir().unwrap();
     let runtime = directory.path().join("runtime");
     let server = Server::bind(&runtime).unwrap();
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     for (command, now, expected, worked) in [
         (Command::Pause, 1290, State::Paused, 1290),
         (Command::Status, 5000, State::Paused, 1290),
@@ -25,15 +24,15 @@ fn requests_apply_to_the_cycle_and_reply_with_json_snapshots() {
         stream.shutdown(Shutdown::Write).unwrap();
         let pending = server.poll().unwrap().unwrap();
         assert_eq!(pending.command, command);
-        match pending.command {
-            Command::Pause => cycle.pause(now),
-            Command::Resume => cycle.resume(now),
-            Command::Reset => cycle.reset(now),
-            Command::Status => (),
-        }
-        pending.respond(&Ok(Status::from_snapshot(
-            cycle.snapshot(now, GraceCurve::default()),
-        )));
+        let frame = cycle.update(
+            crate::timer::Observation {
+                now,
+                ..Default::default()
+            },
+            &crate::config::Settings::default(),
+            Some(pending.command),
+        );
+        pending.respond(&Ok(frame.status));
         let reply: Reply = serde_json::from_reader(stream).unwrap();
         let status = reply.unwrap();
         assert_eq!(status.state, expected);
@@ -64,7 +63,8 @@ fn malformed_and_stalled_requests_are_bounded_and_do_not_kill_the_server() {
     let before = Instant::now();
     assert!(server.poll().unwrap().is_none());
     assert!(before.elapsed() < Duration::from_secs(1));
-    let request = thread::spawn(move || super::super::execute(&runtime, Command::Status).unwrap());
+    let request =
+        thread::spawn(move || crate::control::execute(&runtime, Command::Status).unwrap());
     let deadline = Instant::now() + Duration::from_secs(1);
     loop {
         if let Some(pending) = server.poll().unwrap() {

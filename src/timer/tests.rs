@@ -1,9 +1,19 @@
 use super::*;
 
+impl Timer {
+    fn set_timing(&mut self, timing: Timing) {
+        self.timing = timing;
+    }
+
+    fn advance(&mut self, now: u64, curve: GraceCurve) -> DesiredPhase {
+        self.snapshot(now, curve).display_phase()
+    }
+}
+
 #[test]
 fn suspend_is_conservative_and_a_full_break_survives_immediate_input() {
     let curve = GraceCurve::default();
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     cycle.observe_suspend(1500, 299);
     assert_eq!(
         cycle.advance(1500, curve),
@@ -25,7 +35,7 @@ fn suspend_is_conservative_and_a_full_break_survives_immediate_input() {
 
 #[test]
 fn repeated_idle_observations_do_not_restart_the_break() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     cycle.observe_idle_since(1300);
     cycle.observe_idle_since(1400);
     assert_eq!(
@@ -40,7 +50,7 @@ fn repeated_idle_observations_do_not_restart_the_break() {
 
 #[test]
 fn retuning_the_grace_curve_does_not_change_work_debt_or_deadline() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     assert_eq!(
         cycle.advance(1290, GraceCurve::default()),
         DesiredPhase::Interference(GraceCurve::default().level(0.5))
@@ -61,7 +71,7 @@ fn retuning_the_grace_curve_does_not_change_work_debt_or_deadline() {
 
 #[test]
 fn boundaries_and_acceleration() {
-    let mut cycle = BreakCycle::new(10);
+    let mut cycle = Timer::new(10);
     assert_eq!(
         cycle.advance(1209, GraceCurve::default()),
         DesiredPhase::Work
@@ -82,7 +92,7 @@ fn boundaries_and_acceleration() {
 
 #[test]
 fn inactivity_crosses_deadline_and_resume_restarts_countdown() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     cycle.observe_idle_since(1300);
     assert_eq!(
         cycle.advance(1380, GraceCurve::default()),
@@ -119,7 +129,7 @@ fn inactivity_crosses_deadline_and_resume_restarts_countdown() {
 
 #[test]
 fn short_pauses_do_not_erase_debt() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     cycle.observe_idle_since(1000);
     cycle.observe_activity(1299);
     assert!(matches!(
@@ -130,7 +140,7 @@ fn short_pauses_do_not_erase_debt() {
 
 #[test]
 fn idle_startup_and_suspend_complete_break_without_tick() {
-    let mut cycle = BreakCycle::new(1000);
+    let mut cycle = Timer::new(1000);
     cycle.observe_idle_since(800);
     cycle.observe_activity(1100);
     assert_eq!(
@@ -151,7 +161,7 @@ fn idle_startup_and_suspend_complete_break_without_tick() {
 
 #[test]
 fn pause_freezes_debt_hides_effects_and_resume_preserves_the_deadline() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.pause(1290);
     cycle.pause(2000); // Idempotent: must not move the frozen timestamp.
@@ -177,7 +187,7 @@ fn pause_freezes_debt_hides_effects_and_resume_preserves_the_deadline() {
 
 #[test]
 fn pause_in_overtime_keeps_debt_but_restarts_continuous_idle_observation() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_idle_since(1300);
     cycle.pause(1400);
@@ -193,7 +203,7 @@ fn pause_in_overtime_keeps_debt_but_restarts_continuous_idle_observation() {
 
 #[test]
 fn reset_clears_overtime_and_pause_without_accepting_old_idle_history() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.pause(1500);
     cycle.reset(9000);
@@ -201,8 +211,8 @@ fn reset_clears_overtime_and_pause_without_accepting_old_idle_history() {
     let status = cycle.snapshot(9000, curve);
     assert_eq!(status.mode, Mode::Running);
     assert_eq!(status.worked, 0);
-    assert_eq!(status.phase_remaining, WORK_INTERVAL + GRACE_INTERVAL);
-    assert_eq!(status.break_remaining, BREAK_INTERVAL);
+    assert_eq!(status.phase_remaining, 1380);
+    assert_eq!(status.break_remaining, 300);
     cycle.observe_activity(9001);
     assert_eq!(cycle.advance(10199, curve), DesiredPhase::Work);
     assert_eq!(
@@ -213,7 +223,7 @@ fn reset_clears_overtime_and_pause_without_accepting_old_idle_history() {
 
 #[test]
 fn pausing_a_completed_break_does_not_restart_work_without_input() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_idle_since(1300);
     cycle.pause(1600);
@@ -229,7 +239,7 @@ fn pausing_a_completed_break_does_not_restart_work_without_input() {
 
 #[test]
 fn input_during_a_paused_completed_break_is_not_lost_on_resume() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_idle_since(1300);
     cycle.pause(1600);
@@ -246,7 +256,7 @@ fn input_during_a_paused_completed_break_is_not_lost_on_resume() {
 
 #[test]
 fn locked_input_does_not_restart_work_after_a_completed_break() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_input(1140, true, true, None);
     cycle.observe_input(1142, true, false, Some(1142));
@@ -259,12 +269,12 @@ fn locked_input_does_not_restart_work_after_a_completed_break() {
     let snapshot = cycle.snapshot(1600, curve);
     assert_eq!(snapshot.mode, Mode::Running);
     assert_eq!(snapshot.worked, 0);
-    assert_eq!(snapshot.phase_remaining, WORK_INTERVAL + GRACE_INTERVAL);
+    assert_eq!(snapshot.phase_remaining, 1380);
 }
 
 #[test]
 fn early_unlock_retains_debt_and_unlock_without_input_is_a_return() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_input(1140, true, true, None);
     cycle.observe_input(1142, true, false, Some(1142));
@@ -277,12 +287,12 @@ fn early_unlock_retains_debt_and_unlock_without_input_is_a_return() {
     let snapshot = cycle.snapshot(1800, curve);
     assert_eq!(snapshot.mode, Mode::Running);
     assert_eq!(snapshot.worked, 0);
-    assert_eq!(snapshot.break_remaining, BREAK_INTERVAL);
+    assert_eq!(snapshot.break_remaining, 300);
 }
 
 #[test]
 fn any_completed_idle_break_waits_for_return() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_input(302, false, false, Some(302));
     assert_eq!(cycle.snapshot(662, curve).mode, Mode::Resting);
@@ -293,7 +303,7 @@ fn any_completed_idle_break_waits_for_return() {
 
 #[test]
 fn configurable_durations_drive_boundaries_breaks_and_suspend() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     let timing =
         serde_json::from_str(r#"{"work_seconds":60,"grace_seconds":10,"break_seconds":210}"#)
@@ -325,7 +335,7 @@ fn configurable_durations_drive_boundaries_breaks_and_suspend() {
 
 #[test]
 fn zero_grace_goes_directly_to_the_card_and_retuning_keeps_debt() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     assert_eq!(cycle.snapshot(100, curve).worked, 100);
     cycle.set_timing(
@@ -348,7 +358,7 @@ fn zero_grace_goes_directly_to_the_card_and_retuning_keeps_debt() {
 
 #[test]
 fn locked_activity_interrupts_an_incomplete_break() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_input(1142, true, false, Some(1142));
     cycle.observe_input(1400, true, true, None);
@@ -361,7 +371,7 @@ fn locked_activity_interrupts_an_incomplete_break() {
 
 #[test]
 fn suspended_break_with_password_input_waits_for_unlock() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_input(1140, true, true, None);
     cycle.observe_suspend(1740, 600);
@@ -374,7 +384,7 @@ fn suspended_break_with_password_input_waits_for_unlock() {
 
 #[test]
 fn countdown_runs_continuously_from_work_plus_grace_to_the_card() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     for (now, remaining) in [(0, 1380), (1199, 181), (1200, 180), (1379, 1)] {
         assert_eq!(cycle.snapshot(now, curve).phase_remaining, remaining);
@@ -386,7 +396,7 @@ fn countdown_runs_continuously_from_work_plus_grace_to_the_card() {
 
 #[test]
 fn resting_counts_from_break_completion_not_the_tick_and_survives_locked_input() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_input(302, true, false, Some(302));
     assert_eq!(cycle.snapshot(602, curve).resting_seconds, 0);
@@ -402,7 +412,7 @@ fn resting_counts_from_break_completion_not_the_tick_and_survives_locked_input()
 
 #[test]
 fn pausing_freezes_resting_elapsed_time_too() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     cycle.observe_idle_since(100);
     cycle.pause(450);
@@ -413,11 +423,160 @@ fn pausing_freezes_resting_elapsed_time_too() {
 
 #[test]
 fn suspended_resting_time_includes_the_proven_time_after_break_completion() {
-    let mut cycle = BreakCycle::new(0);
+    let mut cycle = Timer::new(0);
     cycle.observe_input(100, true, true, None);
     cycle.observe_suspend(1000, 900);
     assert_eq!(
         cycle.snapshot(1000, GraceCurve::default()).resting_seconds,
         600
+    );
+}
+
+#[test]
+fn publications_quantize_interference_but_never_replace_deadline_with_maximum() {
+    let settings = Settings::default();
+    assert!(
+        Publication::for_phase(
+            DesiredPhase::Interference(Glitchiness::try_from(5.49).unwrap()),
+            &settings
+        ) == Publication::Work
+    );
+    assert!(
+        Publication::for_phase(
+            DesiredPhase::Interference(Glitchiness::try_from(50.49).unwrap()),
+            &settings
+        ) == Publication::Interference(Glitchiness::try_from(50.0).unwrap())
+    );
+    assert!(
+        Publication::for_phase(
+            DesiredPhase::Interference(Glitchiness::try_from(100.0).unwrap()),
+            &settings
+        ) == Publication::Interference(Glitchiness::try_from(100.0).unwrap())
+    );
+    assert!(
+        Publication::for_phase(DesiredPhase::TestCard { remaining: 300 }, &settings)
+            == Publication::TestCard(300)
+    );
+}
+
+#[test]
+fn tick_publishes_transitions_and_reports_status_from_the_same_snapshot() {
+    let mut timer = Timer::new(0);
+    let settings = Settings::default();
+    let mut tick = |now| {
+        timer.update(
+            Observation {
+                now,
+                ..Default::default()
+            },
+            &settings,
+            None,
+        )
+    };
+    let work = tick(0);
+    assert_eq!(work.status.phase, Some(Phase::Work));
+    assert_eq!(
+        work.display,
+        Some(DisplayUpdate::Publish(Publication::Work))
+    );
+    assert_eq!(tick(1199).display, None);
+    let grace = tick(1200);
+    assert_eq!(grace.status.phase, Some(Phase::Grace));
+    assert_eq!(grace.status.glitchiness, 35.0);
+    assert_eq!(
+        grace.display,
+        Some(DisplayUpdate::Publish(Publication::Interference(
+            Glitchiness::try_from(35.0).unwrap()
+        )))
+    );
+    let overtime = tick(1380);
+    assert_eq!(overtime.status.phase, Some(Phase::Overtime));
+    assert_eq!(overtime.status.break_remaining_seconds, Some(300));
+    assert_eq!(
+        overtime.display,
+        Some(DisplayUpdate::Publish(Publication::TestCard(300)))
+    );
+    assert_eq!(tick(1380).display, None);
+}
+
+#[test]
+fn commands_cancel_trials_even_if_the_normal_display_is_already_clean() {
+    let settings = Settings::default();
+    let mut timer = Timer::new(0);
+    for command in [
+        Command::Pause,
+        Command::Pause,
+        Command::Reset,
+        Command::Reset,
+    ] {
+        let frame = timer.update(
+            Observation {
+                now: 100,
+                ..Default::default()
+            },
+            &settings,
+            Some(command),
+        );
+        assert_eq!(frame.display, Some(DisplayUpdate::Reset));
+        assert_eq!(
+            frame.status.state,
+            if command == Command::Pause {
+                State::Paused
+            } else {
+                State::Running
+            }
+        );
+        assert_eq!(
+            timer
+                .update(
+                    Observation {
+                        now: 100,
+                        ..Default::default()
+                    },
+                    &settings,
+                    Some(Command::Status)
+                )
+                .display,
+            None
+        );
+    }
+}
+
+#[test]
+fn tick_retunes_before_accounting_and_a_completed_suspended_break_survives_input() {
+    let mut timer = Timer::new(0);
+    let settings = Settings {
+        timing: serde_json::from_str(r#"{"work_seconds":60,"grace_seconds":0,"break_seconds":30}"#)
+            .unwrap(),
+        ..Default::default()
+    };
+    let overtime = timer.update(
+        Observation {
+            now: 60,
+            ..Default::default()
+        },
+        &settings,
+        None,
+    );
+    assert_eq!(
+        overtime.display,
+        Some(DisplayUpdate::Publish(Publication::TestCard(30)))
+    );
+    let returned = timer.update(
+        Observation {
+            now: 90,
+            suspended: 30,
+            resumed: true,
+            ..Default::default()
+        },
+        &settings,
+        None,
+    );
+    assert_eq!(returned.status.state, State::Running);
+    assert_eq!(returned.status.work_seconds, Some(0));
+    assert_eq!(returned.status.remaining_seconds, Some(60));
+    assert_eq!(
+        returned.display,
+        Some(DisplayUpdate::Publish(Publication::Work))
     );
 }

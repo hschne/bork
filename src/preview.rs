@@ -1,4 +1,4 @@
-use crate::{artwork, config, effect::Settings, hyprland::Hyprland, recovery::DesktopTrial};
+use crate::{artwork, config, config::Settings, hyprland::Hyprland, recovery::DesktopTrial};
 use anyhow::{Context, Result};
 use eframe::egui;
 use std::{
@@ -10,7 +10,6 @@ use std::{
 mod capture;
 mod controls;
 mod curve;
-mod image;
 mod playback;
 // GL calls require a current eframe context and stay private to the sample scene.
 #[allow(unsafe_code)]
@@ -113,7 +112,18 @@ impl Preview {
                     .pick_file()
             });
             let result = path
-                .map(|path| image::load(&path).map(|image| (path, image)))
+                .map(|path| {
+                    artwork::load_image(&path).map(|image| {
+                        let image = if image.width() > 4096 || image.height() > 4096 {
+                            image::DynamicImage::ImageRgba8(image)
+                                .thumbnail(4096, 4096)
+                                .into_rgba8()
+                        } else {
+                            image
+                        };
+                        (path, artwork::Canvas::from_image(image))
+                    })
+                })
                 .transpose();
             let _ = sender.send(result);
             ctx.request_repaint();
@@ -220,8 +230,10 @@ impl eframe::App for Preview {
         let level = self.playback.level(&self.settings);
         let test_card = self.playback.test_card(&self.settings);
         self.capture
-            .update(ctx, level.value(), self.settings.curve(), test_card);
-        if self.playback.playing || (!test_card && self.settings.has_visible_effect_at(level)) {
+            .update(ctx, level.value(), self.settings.curve, test_card);
+        if self.playback.playing
+            || (!test_card && self.settings.interference.has_visible_effect_at(level))
+        {
             ctx.request_repaint_after(Duration::from_millis(33));
         } else if self.trial.is_some() || self.image_pending.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));

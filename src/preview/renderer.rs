@@ -1,7 +1,7 @@
 //! OpenGL interface adaptation only. All interference lives in signal.glsl.
 use crate::{
     artwork::Canvas,
-    effect::{Glitchiness, Settings},
+    effect::{Glitchiness, Interference},
 };
 use std::sync::Arc;
 
@@ -19,13 +19,11 @@ pub struct Renderer {
     vao: glow::VertexArray,
     texture: glow::Texture,
     body: String,
-    settings: Settings,
-    level: Glitchiness,
     canvas: Option<Arc<Canvas>>,
 }
 
 impl Renderer {
-    pub fn new(gl: &glow::Context, settings: &Settings, level: Glitchiness) -> Result<Self> {
+    pub fn new(gl: &glow::Context, settings: &Interference, level: Glitchiness) -> Result<Self> {
         let body = settings.shader_body(level);
         let program = compile(gl, &body)?;
         // SAFETY: eframe's creation callback has made this GL context current. The
@@ -54,8 +52,6 @@ impl Renderer {
                 vao,
                 texture,
                 body,
-                settings: settings.clone(),
-                level,
                 canvas: None,
             })
         }
@@ -64,12 +60,9 @@ impl Renderer {
     pub fn update(
         &mut self,
         gl: &glow::Context,
-        settings: &Settings,
+        settings: &Interference,
         level: Glitchiness,
     ) -> Result<()> {
-        if self.settings == *settings && self.level == level {
-            return Ok(());
-        }
         let body = settings.shader_body(level);
         if self.body != body {
             let program = compile(gl, &body)?;
@@ -83,8 +76,6 @@ impl Renderer {
             self.program = program;
             self.body = body;
         }
-        self.settings = settings.clone();
-        self.level = level;
         Ok(())
     }
 

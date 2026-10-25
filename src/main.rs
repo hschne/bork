@@ -91,7 +91,7 @@ fn main() -> Result<()> {
         Some(Action::Resume) => timer(control::Command::Resume, StatusFormat::Json),
         Some(Action::Reset) => timer(control::Command::Reset, StatusFormat::Json),
         Some(Action::Guardian { runtime, socket }) => recovery::run_guardian(&runtime, socket),
-        None => bork::background::run(),
+        None => bork::timer::run(),
     }
 }
 
@@ -122,7 +122,14 @@ fn configure(command: ConfigAction) -> Result<()> {
 
 fn timer(command: control::Command, format: StatusFormat) -> Result<()> {
     let status = (|| control::execute(&Hyprland::from_env()?.runtime_directory()?, command))();
-    let mut stdout = std::io::stdout().lock();
+    write_status(status, format, std::io::stdout().lock())
+}
+
+fn write_status(
+    status: Result<control::Status>,
+    format: StatusFormat,
+    mut stdout: impl Write,
+) -> Result<()> {
     match format {
         StatusFormat::Json => {
             serde_json::to_writer(&mut stdout, &status?)?;
@@ -150,4 +157,103 @@ fn timer(command: control::Command, format: StatusFormat) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bork::control::{State, Status};
+    use clap::CommandFactory;
+
+    #[test]
+    fn parser_accepts_current_commands_and_rejects_invalid_arguments() {
+        assert!(Cli::try_parse_from(["bork"]).unwrap().command.is_none());
+        assert!(matches!(
+            Cli::try_parse_from(["bork", "status"]).unwrap().command,
+            Some(Action::Status {
+                format: StatusFormat::Json
+            })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["bork", "status", "--format", "break"])
+                .unwrap()
+                .command,
+            Some(Action::Status {
+                format: StatusFormat::Break
+            })
+        ));
+        for args in [
+            vec!["bork", "config"],
+            vec!["bork", "config", "get"],
+            vec!["bork", "config", "set", "curve"],
+            vec!["bork", "config", "unset"],
+            vec!["bork", "status", "--format", "typo"],
+            vec!["bork", "stop"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+        let help = Cli::command().render_long_help().to_string();
+        for variable in [
+            "BORK_LIBRARY_PATH",
+            "BORK_NIX_DISCOVERY",
+            "BORK_HYPRLAND_BINARY",
+        ] {
+            assert!(help.contains(variable));
+        }
+    }
+
+    #[test]
+    fn json_output_is_one_status_line() {
+        let mut output = Vec::new();
+        write_status(Ok(Status::stopped()), StatusFormat::Json, &mut output).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Status>(&output).unwrap(),
+            Status::stopped()
+        );
+        assert_eq!(output.iter().filter(|&&byte| byte == b'\n').count(), 1);
+        output.clear();
+        assert!(
+            write_status(
+                Err(anyhow::anyhow!("unavailable")),
+                StatusFormat::Json,
+                &mut output
+            )
+            .is_err()
+        );
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn break_output_uses_the_break_countdown_and_reports_each_state() {
+        for (state, seconds, expected) in [
+            (State::Running, 300, "05:00 LEFT"),
+            (State::Running, 65, "01:05 LEFT"),
+            (State::Running, 0, "00:00 LEFT"),
+            (State::Running, 6000, "100:00 LEFT"),
+            (State::Resting, 0, "BREAK COMPLETE"),
+            (State::Paused, 300, "BORK PAUSED"),
+            (State::Stopped, 300, "BORK STOPPED"),
+        ] {
+            let status = Status {
+                state,
+                remaining_seconds: Some(1338),
+                break_remaining_seconds: Some(seconds),
+                ..Status::stopped()
+            };
+            let mut output = Vec::new();
+            write_status(Ok(status), StatusFormat::Break, &mut output).unwrap();
+            assert_eq!(String::from_utf8(output).unwrap(), format!("{expected}\n"));
+        }
+        for status in [
+            Err(anyhow::anyhow!("unavailable")),
+            Ok(Status {
+                state: State::Running,
+                ..Status::stopped()
+            }),
+        ] {
+            let mut output = Vec::new();
+            assert!(write_status(status, StatusFormat::Break, &mut output).is_err());
+            assert_eq!(output, b"BORK UNAVAILABLE\n");
+        }
+    }
 }

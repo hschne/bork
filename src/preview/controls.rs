@@ -177,15 +177,11 @@ impl Preview {
     fn curve(&mut self, ui: &mut egui::Ui) {
         match super::curve::show(
             ui,
-            self.settings.curve(),
+            self.settings.curve,
             self.playback.grace_progress(&self.settings),
             self.settings.timing.grace_seconds,
         ) {
-            Ok(Some(curve)) => {
-                if let Err(error) = self.settings.set_curve(curve.points()) {
-                    self.status = error.to_string();
-                }
-            }
+            Ok(Some(curve)) => self.settings.curve = curve,
             Ok(None) => (),
             Err(error) => self.status = error.to_string(),
         }

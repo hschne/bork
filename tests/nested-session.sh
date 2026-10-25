@@ -85,7 +85,9 @@ function main() {
   proof="$(mise exec -- cargo test --test display --no-run --message-format=json | sed -n '/"name":"display"/s/.*"executable":"\([^"]*\)".*/\1/p')"
   [[ -x "$proof" ]] || die "Display test executable missing"
   grim="$(readlink -f "$(command -v grim)")"
-  runtime="$(mktemp -d "${TMPDIR:-/tmp}/bork-session.XXXXXX")"
+  # Hyprland appends its long instance signature; Unix socket paths allow 108 bytes.
+  # This also matches the /tmp/sl.* isolation guard in tests/display.rs.
+  runtime="$(mktemp -d /tmp/sl.XXXXXX)"
   mkdir -p "$runtime/home/.cache"
   if [[ -n "${BORK_RUNTIME_FILE:-}" ]]; then printf '%s\n' "$runtime" >"$BORK_RUNTIME_FILE"; fi
   sway="$(nix build nixpkgs#sway-unwrapped --no-link --print-out-paths)/bin/sway"

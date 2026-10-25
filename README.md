@@ -57,15 +57,23 @@ The background is the shipped image `assets/overtime.png`. Keep `assets/` beside
 ```json
 {
   "overtime": {
-    "background": {"image": "/home/YOU/Pictures/break.png", "fit": "cover"},
+    "background": { "image": "/home/YOU/Pictures/break.png", "fit": "cover" },
     "font_family": "SauceCodePro NF",
     "color": "#eeeeee",
     "halign": "center",
     "valign": "center",
     "labels": [
-      {"text": "TRANSMISSION PAUSED", "font_size": 18, "position": ["0%", "13.5%"]},
-      {"text": "TAKE A BREAK", "font_size": 62, "position": ["0%", "4.5%"]},
-      {"text": "{remaining} / {total}", "font_size": 34, "position": ["0%", "-5%"]}
+      {
+        "text": "TRANSMISSION PAUSED",
+        "font_size": 18,
+        "position": ["0%", "13.5%"]
+      },
+      { "text": "TAKE A BREAK", "font_size": 62, "position": ["0%", "4.5%"] },
+      {
+        "text": "{remaining} / {total}",
+        "font_size": 34,
+        "position": ["0%", "-5%"]
+      }
     ]
   }
 }

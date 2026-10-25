@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn missing_fields_inherit_defaults_and_labels_inherit_global_style() {
-    let settings: crate::effect::Settings = serde_json::from_str(
+    let settings: crate::config::Settings = serde_json::from_str(
         r##"{"overtime":{"color":"#abcdef","labels":[{"text":"{remaining} / {total}"}]}}"##,
     )
     .unwrap();

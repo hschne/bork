@@ -1,0 +1,41 @@
+amends "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Config.pkl"
+
+local linters = new Mapping<String, Step> {
+  ["format"] {
+    glob = List("**/*.rs", "**/Cargo.toml", "**/rustfmt.toml", "**/.rustfmt.toml", "mise.toml", "hk.pkl")
+    check = "mise run fmt:check"
+    fix = "mise run fmt"
+  }
+
+  ["rust"] {
+    glob = List("**/*.rs", "**/Cargo.toml", "Cargo.lock", ".cargo/**", "mise.toml", "hk.pkl")
+    check = "mise run check"
+  }
+}
+
+hooks {
+  ["pre-commit"] {
+    steps {
+      ["format"] = linters["format"]
+    }
+  }
+
+  ["pre-push"] {
+    steps {
+      ["rust"] = linters["rust"]
+    }
+  }
+
+  ["check"] {
+    steps {
+      ["rust"] = linters["rust"]
+    }
+  }
+
+  ["fix"] {
+    fix = true
+    steps {
+      ["format"] = linters["format"]
+    }
+  }
+}

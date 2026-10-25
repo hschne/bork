@@ -168,3 +168,27 @@ pub(super) fn update(path: &Path, hypr: &Hyprland, shader: &str) -> Result<()> {
             .context("Invalid shader path")?,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_journal_settings_are_retained_without_connecting_to_a_compositor() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "socket": path.join("absent.sock"),
+            "changes": [{"key":"unmanaged:option", "before":"a", "installed":"b"}],
+        }))
+        .unwrap();
+        fs::write(path.join("journal.json"), &bytes).unwrap();
+        assert!(
+            restore(path)
+                .unwrap_err()
+                .to_string()
+                .contains("unmanaged:option")
+        );
+        assert_eq!(fs::read(path.join("journal.json")).unwrap(), bytes);
+    }
+}

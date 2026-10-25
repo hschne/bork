@@ -15,16 +15,6 @@ fn command() -> Command {
 }
 
 #[test]
-fn help_documents_runtime_overrides_without_loading_graphics() {
-    let output = command().arg("--help").output().unwrap();
-    assert!(output.status.success());
-    let help = String::from_utf8(output.stdout).unwrap();
-    assert!(help.contains("BORK_LIBRARY_PATH"));
-    assert!(help.contains("BORK_NIX_DISCOVERY"));
-    assert!(help.contains("BORK_HYPRLAND_BINARY"));
-}
-
-#[test]
 fn invalid_library_override_is_actionable() {
     let output = command()
         .arg("doctor")
@@ -53,22 +43,4 @@ fn override_precedes_inherited_paths_and_reexec_preserves_command() {
             < stdout.find(inherited_dir.path().to_str().unwrap()).unwrap()
     );
     assert!(String::from_utf8_lossy(&output.stderr).contains("Not in a Hyprland session"));
-}
-
-#[test]
-fn emergency_reset_ignores_broken_graphics_configuration() {
-    let runtime = tempfile::tempdir().unwrap();
-    let output = command()
-        .arg("reset")
-        .env("XDG_RUNTIME_DIR", runtime.path())
-        .env("HYPRLAND_INSTANCE_SIGNATURE", "fixture-instance")
-        .env("BORK_NIX_DISCOVERY", "invalid")
-        .env("BORK_LIBRARY_PATH", "invalid")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

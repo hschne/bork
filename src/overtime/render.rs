@@ -3,11 +3,7 @@ use super::{Color, Fit, Horizontal, Offset, Overtime, Vertical};
 use crate::artwork::Canvas;
 use ab_glyph::{Font, FontArc, FontVec, Glyph, ScaleFont, point};
 use anyhow::{Context, Result, ensure};
-use image::{ImageReader, Rgba, RgbaImage, imageops};
-use std::{
-    fs,
-    io::{Cursor, Read},
-};
+use image::{Rgba, RgbaImage, imageops};
 
 pub struct Renderer {
     settings: Overtime,
@@ -17,28 +13,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn load(settings: &Overtime) -> Result<Self> {
-        let file = fs::File::open(&settings.background.image).with_context(|| {
-            format!(
-                "Opening overtime image {}",
-                settings.background.image.display()
-            )
-        })?;
-        let mut bytes = Vec::new();
-        file.take(64 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
-        ensure!(
-            bytes.len() <= 64 * 1024 * 1024,
-            "Overtime image exceeds 64 MiB"
-        );
-        let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(8192);
-        limits.max_image_height = Some(8192);
-        limits.max_alloc = Some(128 * 1024 * 1024);
-        reader.limits(limits);
-        let background = reader
-            .decode()
-            .context("Decoding overtime image")?
-            .to_rgba8();
+        let background = crate::artwork::load_image(&settings.background.image)?;
         let mut database = fontdb::Database::new();
         database.load_system_fonts();
         let fonts = settings.labels.iter().map(|label| {
@@ -208,6 +183,7 @@ fn blend(pixel: &mut Rgba<u8>, color: Color, coverage: f32) {
 mod tests {
     use super::*;
     use crate::overtime::{FontSize, Label};
+    use std::fs;
 
     #[test]
     fn shipped_background_has_no_text_and_countdown_uses_the_actual_total() {

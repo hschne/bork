@@ -1,11 +1,30 @@
 [tools]
 rust = "1.93.1"
 
+[tasks.fmt]
+description = "Format Rust code"
+run = "cargo fmt --all"
+
+[tasks."fmt:check"]
+description = "Check Rust formatting"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "Lint all Rust targets with Clippy"
+run = "cargo clippy --locked --all-targets -- -D warnings"
+
+[tasks.test]
+description = "Run Rust tests"
+run = "cargo test --locked"
+
 [tasks.check]
-run = ["cargo fmt --all -- --check", "cargo clippy --locked --all-targets -- -D warnings", "cargo test --locked"]
+description = "Check formatting, lint, and test Rust code"
+depends = ["fmt:check", "lint", "test"]
 
 [tasks.build]
+description = "Build the development executable"
 run = "cargo build --locked"
 
 [tasks.release]
+description = "Build deployable distribution artifacts in dist/"
 run = "docker build --target artifact --output type=local,dest=dist ."

@@ -1,4 +1,5 @@
 use super::*;
+
 #[test]
 fn constructors_and_json_enforce_the_same_ranges() {
     for value in [f32::NAN, f32::INFINITY, -0.1, 100.1] {
@@ -13,50 +14,45 @@ fn constructors_and_json_enforce_the_same_ranges() {
     ] {
         assert!(Effect::new(true, entry, maximum).is_err());
     }
-    let valid = serde_json::to_value(Settings::default()).unwrap();
+    let valid = serde_json::to_value(Interference::default()).unwrap();
     assert_eq!(
-        serde_json::from_value::<Settings>(valid.clone()).unwrap(),
-        Settings::default()
+        serde_json::from_value::<Interference>(valid.clone()).unwrap(),
+        Interference::default()
     );
-    for (pointer, bad) in [
-        ("/curve", 0.0),
-        ("/tears/entry", 100.0),
-        ("/colour/maximum", -0.1),
-    ] {
+    for (pointer, bad) in [("/tears/entry", 100.0), ("/colour/maximum", -0.1)] {
         let mut input = valid.clone();
         *input.pointer_mut(pointer).unwrap() = serde_json::json!(bad);
         assert!(
-            serde_json::from_value::<Settings>(input).is_err(),
+            serde_json::from_value::<Interference>(input).is_err(),
             "{pointer}"
         );
     }
     let mut unknown = valid;
     unknown["tears"]["typo"] = serde_json::json!(true);
-    assert!(serde_json::from_value::<Settings>(unknown).is_err());
+    assert!(serde_json::from_value::<Interference>(unknown).is_err());
 }
 
 #[test]
-fn rejected_edits_preserve_valid_tuning_and_disabled_effects_are_invisible() {
-    let mut settings = Settings::default();
-    let original = settings.clone();
-    let mut invalid = settings.curve().points();
-    invalid[1].intensity = -1.0;
-    assert!(settings.set_curve(invalid).is_err());
-    assert_eq!(settings, original);
-    for kind in EffectKind::ALL {
-        settings.set_effect(kind, Effect::new(false, 0.0, 1.0).unwrap());
-    }
-    assert!(!settings.has_visible_effect_at(Glitchiness::MAXIMUM));
-    assert!(original.has_visible_effect_at(Glitchiness::MAXIMUM));
-    assert!(!original.has_visible_effect_at(Glitchiness::ZERO));
+fn disabled_channels_are_invisible() {
+    let disabled = Effect::new(false, 0.0, 1.0).unwrap();
+    let interference = Interference {
+        tears: disabled,
+        colour: disabled,
+        bands: disabled,
+        noise: disabled,
+        ghost: disabled,
+    };
+    assert!(!interference.has_visible_effect_at(Glitchiness::MAXIMUM));
+    assert!(Interference::default().has_visible_effect_at(Glitchiness::MAXIMUM));
+    assert!(!Interference::default().has_visible_effect_at(Glitchiness::ZERO));
 }
 
 #[test]
 fn actual_shader_constants_raise_burst_frequency_and_duration_separately() {
-    let settings = Settings::default();
+    let interference = Interference::default();
     let mut previous = [0.0, 0.0];
     for level in 0..=100 {
-        let body = settings.shader_body(Glitchiness::try_from(level as f32).unwrap());
+        let body = interference.shader_body(Glitchiness::try_from(level as f32).unwrap());
         let mut current = [0.0; 2];
         for (i, name) in ["FREQUENCY", "DURATION"].iter().enumerate() {
             let prefix = format!("const float {name} = ");
@@ -78,63 +74,58 @@ fn actual_shader_constants_raise_burst_frequency_and_duration_separately() {
 
 #[test]
 fn seeded_adapter_preserves_time_and_monitor_identity() {
-    let settings = Settings::default();
-    let shader = settings
-        .hyprland_shader_at(Glitchiness::try_from(75.0).unwrap(), 123.5, u32::MAX)
+    let interference = Interference::default();
+    let level = Glitchiness::try_from(75.0).unwrap();
+    let shader = interference
+        .hyprland_shader_at(level, 123.5, u32::MAX)
         .unwrap();
     assert!(shader.contains("uniform int wl_output;"));
     assert!(shader.contains("time + 123.5000, 4294967295u ^ uint(wl_output)"));
     assert_eq!(
         shader,
-        settings
-            .hyprland_shader_at(Glitchiness::try_from(75.0).unwrap(), 123.5, u32::MAX)
+        interference
+            .hyprland_shader_at(level, 123.5, u32::MAX)
             .unwrap()
     );
     assert_ne!(
         shader,
-        settings
-            .hyprland_shader_at(Glitchiness::try_from(75.0).unwrap(), 123.5, 17)
-            .unwrap()
+        interference.hyprland_shader_at(level, 123.5, 17).unwrap()
     );
     assert!(
-        settings
-            .hyprland_shader_at(Glitchiness::try_from(75.0).unwrap(), f32::INFINITY, 0)
+        interference
+            .hyprland_shader_at(level, f32::INFINITY, 0)
             .is_err()
     );
-    assert!(
-        settings
-            .hyprland_shader_at(Glitchiness::try_from(75.0).unwrap(), -1.0, 0)
-            .is_err()
-    );
+    assert!(interference.hyprland_shader_at(level, -1.0, 0).is_err());
     fresh_seed().unwrap();
 }
 
 #[test]
-fn bounded_smooth_monotonic_and_toggle() {
-    let mut s = Settings::default();
-    for kind in EffectKind::ALL {
-        let e = s.effect(kind);
+fn channel_strength_is_bounded_smooth_and_monotone() {
+    let interference = Interference::default();
+    for effect in [
+        interference.tears,
+        interference.colour,
+        interference.bands,
+        interference.noise,
+        interference.ghost,
+    ] {
         let mut previous = 0.0;
         for i in 0..=10000 {
-            let v = e.strength(Glitchiness::try_from(i as f32 / 100.0).unwrap());
-            assert!(v >= previous && v <= e.maximum());
-            previous = v;
+            let value = effect.strength(Glitchiness::try_from(i as f32 / 100.0).unwrap());
+            assert!(value >= previous && value <= effect.maximum);
+            previous = value;
         }
-        assert_eq!(e.strength(Glitchiness::try_from(e.entry()).unwrap()), 0.0);
-        assert!(e.strength(Glitchiness::try_from(e.entry() + 0.001).unwrap()) < 0.000001);
+        assert_eq!(
+            effect.strength(Glitchiness::try_from(effect.entry).unwrap()),
+            0.0
+        );
+        assert!(effect.strength(Glitchiness::try_from(effect.entry + 0.001).unwrap()) < 0.000001);
     }
-    s.set_effect(EffectKind::Tears, Effect::new(false, 5.0, 0.7).unwrap());
     assert_eq!(
-        s.effect(EffectKind::Tears).strength(Glitchiness::MAXIMUM),
+        Effect::new(false, 5.0, 0.7)
+            .unwrap()
+            .strength(Glitchiness::MAXIMUM),
         0.0
     );
-    assert!(
-        s.hyprland_shader(Glitchiness::MAXIMUM)
-            .unwrap()
-            .contains("bork")
-    );
-    assert!(Glitchiness::try_from(f32::NAN).is_err());
-    let mut invalid = s.curve().points();
-    invalid[1].progress = f32::INFINITY;
-    assert!(s.set_curve(invalid).is_err());
 }

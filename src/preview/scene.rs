@@ -2,7 +2,8 @@
 use super::renderer::Renderer;
 use crate::{
     artwork,
-    effect::{self, Glitchiness, Settings},
+    config::Settings,
+    effect::{self, Glitchiness},
 };
 use anyhow::Result;
 use eframe::egui;
@@ -33,7 +34,11 @@ impl Scene {
         let card =
             Arc::new(card_renderer.paint(&card_background, u64::from(seconds), u64::from(seconds)));
         Ok(Self {
-            renderer: Arc::new(Mutex::new(Renderer::new(gl, settings, Glitchiness::ZERO)?)),
+            renderer: Arc::new(Mutex::new(Renderer::new(
+                gl,
+                &settings.interference,
+                Glitchiness::ZERO,
+            )?)),
             error: Arc::new(Mutex::new(None)),
             sample: sample.clone(),
             bundled: sample,
@@ -55,7 +60,11 @@ impl Scene {
     }
 
     pub(super) fn desktop_shader(&self, settings: &Settings, level: Glitchiness) -> Result<String> {
-        settings.hyprland_shader_at(level, self.start.elapsed().as_secs_f32(), self.seed)
+        settings.interference.hyprland_shader_at(
+            level,
+            self.start.elapsed().as_secs_f32(),
+            self.seed,
+        )
     }
 
     pub(super) fn destroy(&self, gl: &eframe::glow::Context) {
@@ -85,7 +94,7 @@ impl Scene {
         let rect =
             egui::Rect::from_center_size(outer.center(), egui::vec2(height * 16.0 / 9.0, height));
         let renderer = self.renderer.clone();
-        let settings = settings.clone();
+        let interference = settings.interference.clone();
         let canvas = if test_card {
             self.card.clone()
         } else {
@@ -112,7 +121,7 @@ impl Scene {
             rect: image_rect,
             callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut renderer = renderer.lock().unwrap();
-                match renderer.update(painter.gl(), &settings, level) {
+                match renderer.update(painter.gl(), &interference, level) {
                     Ok(()) => renderer.paint(painter.gl(), &canvas, time, seed),
                     Err(e) => *error.lock().unwrap() = Some(format!("{e:#}")),
                 }

@@ -1,8 +1,8 @@
 //! GLSL adapters share the same embedded interference implementation.
-use super::{Glitchiness, Settings};
+use super::{Glitchiness, Interference};
 use anyhow::{Result, ensure};
 
-impl Settings {
+impl Interference {
     /// Shared effect implementation; adapters supply sampleDesktop(), UVs, time and seed.
     pub fn shader_body(&self, level: Glitchiness) -> String {
         let normalized = level.value() / 100.0;
@@ -17,10 +17,6 @@ impl Settings {
             0.08 + 1.02 * normalized.powf(1.2),
             include_str!("../signal.glsl")
         )
-    }
-
-    pub fn hyprland_shader(&self, level: Glitchiness) -> Result<String> {
-        self.hyprland_shader_at(level, 0.0, 0)
     }
 
     /// Preserve animation continuity when Hyprland resets its time uniform on reload.

@@ -1,5 +1,10 @@
-use crate::effect::Settings;
+use crate::{
+    effect::{GraceCurve, Interference},
+    overtime::Overtime,
+};
 use anyhow::{Context, Result, ensure};
+use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 use std::{
     collections::BTreeMap,
     fs::{self, File},
@@ -7,6 +12,41 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
 };
+
+const WORK_INTERVAL: u64 = 20 * 60;
+const GRACE_INTERVAL: u64 = 3 * 60;
+const BREAK_INTERVAL: u64 = 5 * 60;
+
+/// Durations in whole seconds. Work and break must be positive; grace may be zero.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Timing {
+    pub work_seconds: NonZeroU32,
+    pub grace_seconds: u32,
+    pub break_seconds: NonZeroU32,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self {
+            work_seconds: NonZeroU32::new(WORK_INTERVAL as u32).unwrap(),
+            grace_seconds: GRACE_INTERVAL as u32,
+            break_seconds: NonZeroU32::new(BREAK_INTERVAL as u32).unwrap(),
+        }
+    }
+}
+
+/// Application settings. The flat JSON format is independent of the Rust module layout.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Settings {
+    pub timing: Timing,
+    pub curve: GraceCurve,
+    pub preview_image: Option<PathBuf>,
+    pub overtime: Overtime,
+    #[serde(flatten)]
+    pub interference: Interference,
+}
 
 pub fn path() -> Result<PathBuf> {
     let root = match std::env::var_os("XDG_CONFIG_HOME") {
@@ -153,15 +193,106 @@ impl LiveSettings {
 mod tests {
     use super::*;
     #[test]
+    fn listing_defaults_does_not_create_a_file_and_get_agrees() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        let values = list(&path).unwrap();
+        assert_eq!(values["timing.work_seconds"], 1200);
+        assert_eq!(values["timing.break_seconds"], 300);
+        assert_eq!(values["tears.maximum"].to_string(), "0.7");
+        assert_eq!(values["curve"][0]["intensity"], 35.0);
+        assert!(!path.exists());
+        for (key, value) in values {
+            assert_eq!(get(&path, &key).unwrap(), value);
+        }
+        assert!(get(&path, "timing").is_err());
+        assert!(get(&path, "typo").is_err());
+    }
+
+    #[test]
+    fn updates_preserve_other_settings_and_unset_restores_one_default() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        update(&path, "timing.break_seconds", Some(240.into())).unwrap();
+        update(&path, "timing.grace_seconds", Some(0.into())).unwrap();
+        update(&path, "tears.enabled", Some(false.into())).unwrap();
+        let curve = serde_json::json!([
+            {"progress":0.0,"intensity":20.0},
+            {"progress":0.3,"intensity":40.0},
+            {"progress":0.7,"intensity":70.0},
+            {"progress":1.0,"intensity":100.0}
+        ]);
+        update(&path, "curve", Some(curve.clone())).unwrap();
+        update(&path, "preview_image", Some("/tmp/desktop.png".into())).unwrap();
+        update(&path, "timing.break_seconds", None).unwrap();
+        let values = list(&path).unwrap();
+        assert_eq!(values["timing.break_seconds"], 300);
+        assert_eq!(values["timing.grace_seconds"], 0);
+        assert_eq!(values["tears.enabled"], false);
+        assert_eq!(values["curve"], curve);
+        assert_eq!(values["preview_image"], "/tmp/desktop.png");
+    }
+
+    #[test]
+    fn rejected_updates_leave_the_file_untouched() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        update(&path, "timing.work_seconds", Some(900.into())).unwrap();
+        let original = fs::read(&path).unwrap();
+        for (key, value) in [
+            ("typo", None),
+            ("timing", None),
+            ("timing.typo", Some(10.into())),
+            ("timing.work_seconds", Some(0.into())),
+            ("timing.work_seconds", Some(serde_json::Value::Null)),
+            ("timing.work_seconds", Some("1200".into())),
+            ("preview_image", Some(42.into())),
+            ("curve", Some(0.into())),
+            ("tears.entry", Some(100.into())),
+            ("tears.enabled", Some(1.into())),
+        ] {
+            assert!(update(&path, key, value).is_err(), "{key}");
+            assert_eq!(fs::read(&path).unwrap(), original);
+        }
+        fs::write(&path, "invalid").unwrap();
+        assert!(list(&path).is_err());
+        assert!(update(&path, "timing.work_seconds", None).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "invalid");
+    }
+
+    #[test]
+    fn flat_settings_keep_partial_defaults_and_reject_unknown_fields() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"tears":{"enabled":false,"entry":5,"maximum":0.7}}"#).unwrap();
+        assert_eq!(
+            settings.interference.tears,
+            crate::effect::Effect::new(false, 5.0, 0.7).unwrap()
+        );
+        assert_eq!(settings.interference.colour, Interference::default().colour);
+        assert_eq!(settings.timing, Timing::default());
+        for invalid in [
+            r#"{"typo":true}"#,
+            r#"{"interference":{}}"#,
+            r#"{"tears":{"typo":1}}"#,
+            r#"{"curve":0}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<Settings>(invalid).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
     fn reload_publishes_valid_changes_and_keeps_last_good_settings_on_failure() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("settings.json");
         let mut live = LiveSettings::open(path.clone()).unwrap();
         let first_poll = Instant::now() + Duration::from_secs(2);
         let mut settings = Settings::default();
-        let mut points = settings.curve().points();
+        let mut points = settings.curve.points();
         points[1].intensity = 60.0;
-        settings.set_curve(points).unwrap();
+        settings.curve = points.try_into().unwrap();
         settings.timing.break_seconds = 210.try_into().unwrap();
         save(&path, &settings).unwrap();
         assert!(live.reload(first_poll).unwrap());
@@ -193,17 +324,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config/settings.json");
         let mut s = load(&path).unwrap();
-        use crate::effect::{Effect, EffectKind};
+        use crate::effect::Effect;
         s.timing.work_seconds = 900.try_into().unwrap();
         s.timing.grace_seconds = 60;
         s.timing.break_seconds = 210.try_into().unwrap();
-        s.set_effect(EffectKind::Tears, Effect::new(false, 5.0, 0.7).unwrap());
-        s.set_effect(EffectKind::Colour, Effect::new(true, 32.5, 0.65).unwrap());
+        s.interference.tears = Effect::new(false, 5.0, 0.7).unwrap();
+        s.interference.colour = Effect::new(true, 32.5, 0.65).unwrap();
         save(&path, &s).unwrap();
         let reopened = load(&path).unwrap();
         assert_eq!(reopened.timing, s.timing);
-        assert!(!reopened.effect(EffectKind::Tears).enabled());
-        assert_eq!(reopened.effect(EffectKind::Colour).entry(), 32.5);
+        assert_eq!(reopened.interference.tears, s.interference.tears);
+        assert_eq!(reopened.interference.colour, s.interference.colour);
         fs::write(&path, "{\"curve\":0}").unwrap();
         assert!(load(&path).is_err());
     }

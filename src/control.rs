@@ -1,11 +1,5 @@
 //! Background timer control. JSON is the CLI contract; display recovery stays independent.
-mod server;
-pub(crate) use server::Server;
-
-use crate::{
-    cycle::{DesiredPhase, Mode, Snapshot},
-    recovery,
-};
+use crate::recovery;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -65,31 +59,9 @@ impl Status {
             glitchiness: 0.0,
         }
     }
-
-    pub(crate) fn from_snapshot(snapshot: Snapshot) -> Self {
-        let (phase, level) = match snapshot.phase {
-            DesiredPhase::Work => (Phase::Work, 0.0),
-            DesiredPhase::Interference(level) => (Phase::Grace, level.value()),
-            DesiredPhase::TestCard { .. } => (Phase::Overtime, 0.0),
-        };
-        let state = match snapshot.mode {
-            Mode::Running => State::Running,
-            Mode::Paused => State::Paused,
-            Mode::Resting => State::Resting,
-        };
-        Self {
-            state,
-            phase: Some(phase),
-            work_seconds: Some(snapshot.worked),
-            remaining_seconds: Some(snapshot.phase_remaining),
-            break_remaining_seconds: Some(snapshot.break_remaining),
-            resting_seconds: Some(snapshot.resting_seconds),
-            glitchiness: if state == State::Paused { 0.0 } else { level },
-        }
-    }
 }
 
-type Reply = std::result::Result<Status, String>;
+pub(crate) type Reply = std::result::Result<Status, String>;
 
 /// Commands acknowledge only after the background has applied the requested display state.
 /// Reset falls back to independent recovery if the timer is absent or unresponsive.
@@ -134,3 +106,6 @@ fn request(runtime: &Path, command: Command) -> Result<Status> {
     let reply: Reply = serde_json::from_slice(&bytes).context("Invalid timer response")?;
     reply.map_err(anyhow::Error::msg)
 }
+
+#[cfg(test)]
+mod tests;

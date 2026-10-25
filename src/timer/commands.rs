@@ -1,5 +1,5 @@
 //! Bounded request transport, owned and polled by the background timer.
-use super::{Command, Reply, Status};
+use crate::control::{Command, Reply, Status};
 use anyhow::{Context, Result, ensure};
 use fs2::FileExt;
 use std::{

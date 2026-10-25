@@ -43,25 +43,6 @@ impl TryFrom<f32> for Glitchiness {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EffectKind {
-    Tears,
-    Colour,
-    Bands,
-    Noise,
-    Ghost,
-}
-
-impl EffectKind {
-    pub const ALL: [Self; 5] = [
-        Self::Tears,
-        Self::Colour,
-        Self::Bands,
-        Self::Noise,
-        Self::Ghost,
-    ];
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "EffectInput")]
 pub struct Effect {
@@ -102,16 +83,6 @@ impl Effect {
         })
     }
 
-    pub fn enabled(self) -> bool {
-        self.enabled
-    }
-    pub fn entry(self) -> f32 {
-        self.entry
-    }
-    pub fn maximum(self) -> f32 {
-        self.maximum
-    }
-
     pub fn strength(self, level: Glitchiness) -> f32 {
         if !self.enabled {
             return 0.0;
@@ -121,24 +92,18 @@ impl Effect {
     }
 }
 
+/// The five independent interference channels, shared by desktop and preview shaders.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Settings {
-    #[serde(default)]
-    pub timing: crate::cycle::Timing,
-    #[serde(default)]
-    curve: GraceCurve,
-    #[serde(default)]
-    pub preview_image: Option<std::path::PathBuf>,
-    pub overtime: crate::overtime::Overtime,
-    tears: Effect,
-    colour: Effect,
-    bands: Effect,
-    noise: Effect,
-    ghost: Effect,
+pub struct Interference {
+    pub tears: Effect,
+    pub colour: Effect,
+    pub bands: Effect,
+    pub noise: Effect,
+    pub ghost: Effect,
 }
 
-impl Default for Settings {
+impl Default for Interference {
     fn default() -> Self {
         let effect = |entry, maximum| Effect {
             enabled: true,
@@ -146,10 +111,6 @@ impl Default for Settings {
             maximum,
         };
         Self {
-            timing: crate::cycle::Timing::default(),
-            curve: GraceCurve::default(),
-            preview_image: None,
-            overtime: crate::overtime::Overtime::default(),
             tears: effect(5.0, 0.7),
             colour: effect(15.0, 0.65),
             bands: effect(30.0, 0.8),
@@ -159,40 +120,11 @@ impl Default for Settings {
     }
 }
 
-impl Settings {
-    pub fn curve(&self) -> GraceCurve {
-        self.curve
-    }
-    pub fn set_curve(&mut self, curve: [CurvePoint; 4]) -> Result<()> {
-        self.curve = curve.try_into()?;
-        Ok(())
-    }
-
-    pub fn effect(&self, kind: EffectKind) -> Effect {
-        match kind {
-            EffectKind::Tears => self.tears,
-            EffectKind::Colour => self.colour,
-            EffectKind::Bands => self.bands,
-            EffectKind::Noise => self.noise,
-            EffectKind::Ghost => self.ghost,
-        }
-    }
-
-    pub fn set_effect(&mut self, kind: EffectKind, effect: Effect) {
-        *match kind {
-            EffectKind::Tears => &mut self.tears,
-            EffectKind::Colour => &mut self.colour,
-            EffectKind::Bands => &mut self.bands,
-            EffectKind::Noise => &mut self.noise,
-            EffectKind::Ghost => &mut self.ghost,
-        } = effect;
-    }
-
-    /// Whether the current tuning produces visible interference at this level.
+impl Interference {
     pub fn has_visible_effect_at(&self, level: Glitchiness) -> bool {
-        EffectKind::ALL
+        [self.tears, self.colour, self.bands, self.noise, self.ghost]
             .into_iter()
-            .any(|kind| self.effect(kind).strength(level) > 0.0)
+            .any(|effect| effect.strength(level) > 0.0)
     }
 }
 

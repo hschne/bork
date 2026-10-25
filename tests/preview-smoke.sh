@@ -64,7 +64,8 @@ function main() {
     elif [[ "$mode" == test-card ]]; then
       click_target "$ready" "$window" timeline
       wait_for '^timeline .* focused$' "$ready"
-      xdotool key End
+      # egui's slider handles arrows, not End; each press moves one UI point.
+      xdotool key --repeat 1280 --delay 1 Right
       wait_for '^test-card true$' "$ready"
     elif [[ "$mode" == confirmation ]]; then
       click_target "$ready" "$window" live-preview

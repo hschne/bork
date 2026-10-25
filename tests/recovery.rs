@@ -1,6 +1,6 @@
 //! Process + Unix-socket simulation. These tests never connect to the user's compositor.
 use bork::{
-    effect::{Glitchiness, Settings},
+    effect::{Glitchiness, Interference},
     recovery::{self, DisplayState, Message},
 };
 use std::{
@@ -187,8 +187,8 @@ impl Process {
         self.reply()
     }
     fn install(&mut self, trial: bool) -> String {
-        let shader = Settings::default()
-            .hyprland_shader(Glitchiness::try_from(100.0).unwrap())
+        let shader = Interference::default()
+            .hyprland_shader_at(Glitchiness::try_from(100.0).unwrap(), 0.0, 0)
             .unwrap();
         if trial {
             recovery::request_trial(&self.runtime, &recovery::TrialRequest::Start { shader })
@@ -355,11 +355,11 @@ fn editor_trial_borrows_owner_and_restores_latest_background_state() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
-    let trial_shader = Settings::default()
-        .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
+    let trial_shader = Interference::default()
+        .hyprland_shader_at(Glitchiness::try_from(50.0).unwrap(), 0.0, 0)
         .unwrap();
-    let next_shader = Settings::default()
-        .hyprland_shader(Glitchiness::try_from(10.0).unwrap())
+    let next_shader = Interference::default()
+        .hyprland_shader_at(Glitchiness::try_from(10.0).unwrap(), 0.0, 0)
         .unwrap();
     let id = request_trial(
         &fake.runtime(),
@@ -425,11 +425,11 @@ fn borrowed_trial_expiry_resumes_newer_background_shader() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
-    let trial_shader = Settings::default()
-        .hyprland_shader(Glitchiness::try_from(50.0).unwrap())
+    let trial_shader = Interference::default()
+        .hyprland_shader_at(Glitchiness::try_from(50.0).unwrap(), 0.0, 0)
         .unwrap();
-    let next_shader = Settings::default()
-        .hyprland_shader(Glitchiness::try_from(20.0).unwrap())
+    let next_shader = Interference::default()
+        .hyprland_shader_at(Glitchiness::try_from(20.0).unwrap(), 0.0, 0)
         .unwrap();
     request_trial(
         &fake.runtime(),
@@ -593,24 +593,6 @@ fn editor_traffic_cannot_renew_a_stalled_parents_lease() {
         thread::sleep(Duration::from_millis(20));
     }
     fake.wait_original();
-}
-
-#[test]
-fn unknown_journal_settings_are_retained_without_mutation() {
-    let fake = Fake::new();
-    recovery::stop(&fake.runtime()).unwrap();
-    let journal = serde_json::json!({
-        "socket": fake.socket,
-        "changes": [{"key":"unmanaged:option", "before":"a", "installed":"b"}],
-    });
-    std::fs::write(
-        fake.runtime().join("journal.json"),
-        serde_json::to_vec(&journal).unwrap(),
-    )
-    .unwrap();
-    assert!(recovery::stop(&fake.runtime()).is_err());
-    assert!(fake.original());
-    assert!(fake.runtime().join("journal.json").exists());
 }
 
 #[test]

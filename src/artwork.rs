@@ -1,4 +1,29 @@
-//! Owned RGBA canvases shared by the shader sample and software overtime renderer.
+//! Bounded image decoding and owned canvases shared by preview and overtime.
+use anyhow::{Context, Result, ensure};
+use std::{
+    fs::File,
+    io::{Cursor, Read},
+    path::Path,
+};
+
+pub(crate) fn load_image(path: &Path) -> Result<image::RgbaImage> {
+    let file = File::open(path).with_context(|| format!("Opening image {}", path.display()))?;
+    const MAX_BYTES: u64 = 64 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    file.take(MAX_BYTES + 1).read_to_end(&mut bytes)?;
+    ensure!(bytes.len() as u64 <= MAX_BYTES, "Image exceeds 64 MiB");
+    let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    reader
+        .decode()
+        .with_context(|| format!("Decoding image {}", path.display()))
+        .map(|image| image.to_rgba8())
+}
+
 pub struct Canvas {
     width: usize,
     height: usize,
@@ -62,6 +87,26 @@ pub fn desktop() -> Canvas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_loading_is_shared_and_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("image.png");
+        std::fs::write(&path, include_bytes!("../assets/preview-desktop.png")).unwrap();
+        assert_eq!(load_image(&path).unwrap().dimensions(), (1600, 900));
+        std::fs::write(&path, "not an image").unwrap();
+        assert!(load_image(&path).is_err());
+        File::create(&path)
+            .unwrap()
+            .set_len(64 * 1024 * 1024 + 1)
+            .unwrap();
+        assert!(
+            load_image(&path)
+                .unwrap_err()
+                .to_string()
+                .contains("64 MiB")
+        );
+    }
 
     #[test]
     fn argb_scaling_preserves_channels_and_buffer_padding() {
