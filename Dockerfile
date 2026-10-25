@@ -7,6 +7,7 @@ ARG BUILD_JOBS=2
 ENV CARGO_BUILD_JOBS=${BUILD_JOBS}
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY assets ./assets
 RUN cargo build --release --locked
 RUN mkdir /artifact && cp target/release/bork /artifact/ \
     && readelf -l /artifact/bork > /artifact/elf-program-headers.txt \
@@ -16,6 +17,9 @@ RUN mkdir /artifact && cp target/release/bork /artifact/ \
 # `docker build --target artifact --output type=local,dest=dist .`
 FROM scratch AS artifact
 COPY --from=build /artifact/ /
+COPY LICENSE THIRD_PARTY_LICENSES.txt README.md /
+COPY docs /docs/
+COPY assets/intermission.png /assets/intermission.png
 
 # Disposable second-distribution GUI/runtime verification, not the shipped artifact.
 FROM build AS verify

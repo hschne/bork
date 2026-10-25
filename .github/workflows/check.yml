@@ -3,6 +3,7 @@ name: Check
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,3 +29,21 @@ jobs:
           /artifact/bork /tmp/evidence
       - name: Produce executable without publishing
         run: docker build --target artifact --output type=local,dest=dist .
+      - name: Package Linux executable and documentation
+        run: |
+          version="$(./dist/bork --version | awk '{print $2}')"
+          archive="bork-${version}-x86_64-unknown-linux-gnu.tar.gz"
+          mkdir -p .ci-evidence
+          tar -C dist -czf ".ci-evidence/$archive" \
+            bork LICENSE THIRD_PARTY_LICENSES.txt README.md docs assets
+          cd .ci-evidence
+          sha256sum "$archive" > "$archive.sha256"
+      - name: Upload release candidate without publishing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bork-x86_64-unknown-linux-gnu
+          path: |
+            .ci-evidence/*.tar.gz
+            .ci-evidence/*.sha256
+          include-hidden-files: true
+          if-no-files-found: error

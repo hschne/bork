@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
 description = "An escalating visual break reminder for Hyprland"
+license = "MIT"
+repository = "https://github.com/hschne/bork"
 publish = false
 
 [dependencies]
