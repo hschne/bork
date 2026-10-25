@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ab_glyph = "0.2"
 fontdb = { version = "0.24", default-features = false, features = ["std", "fs", "fontconfig"] }
-smithay-client-toolkit = { version = "0.20", default-features = false }
+smithay-client-toolkit = { version = "0.21", default-features = false }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 rustix = { version = "1", features = ["event", "time"] }
@@ -25,8 +25,8 @@ png = "0.18"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rfd = "0.17"
 tempfile = "3"
-object = { version = "0.37.3", default-features = false, features = ["read_core", "elf", "std"] }
-eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+object = { version = "0.40.0", default-features = false, features = ["read_core", "elf", "std"] }
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 
 [dev-dependencies]
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
