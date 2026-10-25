@@ -5,7 +5,7 @@ use crate::{
     effect::{self, Glitchiness, Settings},
 };
 use anyhow::Result;
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui;
 use std::{
     sync::{Arc, Mutex},
     time::Instant,
@@ -15,97 +15,104 @@ pub(super) struct Scene {
     renderer: Arc<Mutex<Renderer>>,
     error: Arc<Mutex<Option<String>>>,
     sample: Arc<artwork::Canvas>,
+    bundled: Arc<artwork::Canvas>,
     card: Arc<artwork::Canvas>,
+    card_seconds: u32,
     start: Instant,
     seed: u32,
 }
 
 impl Scene {
     pub(super) fn new(gl: &eframe::glow::Context, settings: &Settings) -> Result<Self> {
-        let seed = effect::fresh_seed()?;
+        let sample = Arc::new(artwork::desktop());
         Ok(Self {
-            renderer: Arc::new(Mutex::new(Renderer::new(
-                gl,
-                settings,
-                Glitchiness::try_from(35.0)?,
-            )?)),
+            renderer: Arc::new(Mutex::new(Renderer::new(gl, settings, Glitchiness::ZERO)?)),
             error: Arc::new(Mutex::new(None)),
-            sample: Arc::new(artwork::desktop()),
-            card: Arc::new(artwork::test_card(1280, 720, 272)),
+            sample: sample.clone(),
+            bundled: sample,
+            card: Arc::new(artwork::test_card(1280, 720, 300)),
+            card_seconds: 300,
             start: Instant::now(),
-            seed,
+            seed: effect::fresh_seed()?,
         })
     }
+
+    pub(super) fn set_image(&mut self, image: artwork::Canvas) {
+        self.sample = Arc::new(image);
+    }
+
+    pub(super) fn reset_image(&mut self) {
+        self.sample = self.bundled.clone();
+    }
+
     pub(super) fn desktop_shader(&self, settings: &Settings, level: Glitchiness) -> Result<String> {
         settings.hyprland_shader_at(level, self.start.elapsed().as_secs_f32(), self.seed)
     }
+
     pub(super) fn destroy(&self, gl: &eframe::glow::Context) {
         self.renderer.lock().unwrap().destroy(gl);
     }
+
     pub(super) fn show(
-        &self,
-        ctx: &egui::Context,
+        &mut self,
+        ui: &mut egui::Ui,
         settings: &Settings,
         level: Glitchiness,
         test_card: bool,
-    ) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
-                ui.heading("Your signal is slipping.");
-                ui.label(
-                    RichText::new("SHARED GLSL / SAMPLE DESKTOP")
-                        .monospace()
-                        .small()
-                        .color(Color32::from_rgb(164, 170, 161)),
-                );
-            });
-            ui.add_space(16.0);
-            let width = ui.available_width();
-            let height = (width * 9.0 / 16.0)
-                .min(ui.available_height() - 110.0)
-                .max(100.0);
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-            let renderer = self.renderer.clone();
-            let settings = settings.clone();
-            let canvas = if test_card {
-                self.card.clone()
-            } else {
-                self.sample.clone()
-            };
-            let level = if test_card { Glitchiness::ZERO } else { level };
-            let time = self.start.elapsed().as_secs_f32();
-            let seed = self.seed;
-            let error = self.error.clone();
-            ui.painter().add(egui::PaintCallback {
-                rect,
-                callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, painter| {
-                    let mut renderer = renderer.lock().unwrap();
-                    match renderer.update(painter.gl(), &settings, level) {
-                        Ok(()) => renderer.paint(painter.gl(), &canvas, time, seed),
-                        Err(e) => *error.lock().unwrap() = Some(format!("{e:#}")),
-                    }
-                })),
-            });
-            ui.add_space(18.0);
-            ui.label(
-                RichText::new(if test_card {
-                    "04 / TRANSMISSION PAUSED"
-                } else if level.value() < 20.0 {
-                    "01 / A WARNING IN THE SIGNAL"
-                } else if level.value() < 60.0 {
-                    "02 / THE CONNECTION IS UNSTABLE"
-                } else {
-                    "03 / LOSING THE PICTURE"
-                })
-                .monospace()
-                .color(Color32::from_rgb(212, 230, 162)),
-            );
-            ui.label("20 min work / 3 min accelerating grace / test card");
-            ui.label("Five continuous minutes without keyboard or mouse input completes a break.");
-            if let Some(error) = self.error.lock().unwrap().as_ref() {
-                ui.colored_label(Color32::LIGHT_RED, error);
-            }
+    ) -> egui::Rect {
+        let seconds = settings.timing.break_seconds.get();
+        if seconds != self.card_seconds {
+            self.card = Arc::new(artwork::test_card_for_duration(
+                1280,
+                720,
+                u64::from(seconds),
+                u64::from(seconds),
+            ));
+            self.card_seconds = seconds;
+        }
+        let width = ui.available_width();
+        let height =
+            (width * 9.0 / 16.0).min((ui.ctx().content_rect().height() - 400.0).max(180.0));
+        let (outer, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let rect =
+            egui::Rect::from_center_size(outer.center(), egui::vec2(height * 16.0 / 9.0, height));
+        let renderer = self.renderer.clone();
+        let settings = settings.clone();
+        let canvas = if test_card {
+            self.card.clone()
+        } else {
+            self.sample.clone()
+        };
+        // Letterbox custom screenshots instead of stretching them.
+        let aspect = canvas.width() as f32 / canvas.height() as f32;
+        let size = if aspect > rect.aspect_ratio() {
+            egui::vec2(rect.width(), rect.width() / aspect)
+        } else {
+            egui::vec2(rect.height() * aspect, rect.height())
+        };
+        let image_rect = egui::Rect::from_center_size(rect.center(), size);
+        ui.painter().rect_filled(rect, 0.0, egui::Color32::BLACK);
+        let level = if test_card {
+            Glitchiness::ZERO
+        } else {
+            level.quantized()
+        };
+        let time = self.start.elapsed().as_secs_f32();
+        let seed = self.seed;
+        let error = self.error.clone();
+        ui.painter().add(egui::PaintCallback {
+            rect: image_rect,
+            callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, painter| {
+                let mut renderer = renderer.lock().unwrap();
+                match renderer.update(painter.gl(), &settings, level) {
+                    Ok(()) => renderer.paint(painter.gl(), &canvas, time, seed),
+                    Err(e) => *error.lock().unwrap() = Some(format!("{e:#}")),
+                }
+            })),
         });
+        if let Some(error) = self.error.lock().unwrap().as_ref() {
+            ui.colored_label(egui::Color32::RED, error);
+        }
+        rect
     }
 }

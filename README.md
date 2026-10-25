@@ -2,7 +2,7 @@
 
 A visual break reminder for **Hyprland on Linux**. Twenty minutes of work, three minutes of accelerating signal interference, then a steady **TAKE A BREAK** test card. Five continuous minutes without keyboard **or mouse** input restores the desktop.
 
-The desktop effect uses Hyprland's screen shader—not screen capture. The editor renders the same effect shader over an embedded sample desktop, with clean controls beside it.
+The desktop effect uses Hyprland's screen shader—not screen capture. The preview renders the same effect shader over a crisp embedded sample desktop or your own screenshot, with a simple player and settings below it.
 
 Bursts have irregular gaps and varying lengths, with independent timing for each effect and monitor—even identical monitors. Each run gets a fresh random seed, retained during tuning and shader recompilation. Glitchiness controls average frequency and severity, not a repeating loop.
 
@@ -23,7 +23,7 @@ bork reset        # Fresh running interval; also the panic/recovery command
 
 Normal operation stays attached to the launching terminal. Start it through your existing session launcher/service if desired. Bork does not install autostart entries or change compositor configuration.
 
-Work, grace, and break durations are configurable in the editor's **Intervals / Seconds** controls. Defaults are 1200 / 180 / 300 seconds (20 / 3 / 5 minutes). Work and break must be positive whole seconds; grace may be zero to go directly to the test card. The JSON `timing` object in the settings file uses:
+Work, grace, and break durations are configurable in the preview’s **Timing** controls, displayed in minutes. Defaults are 1200 / 180 / 300 seconds (20 / 3 / 5 minutes). Work and break must be positive whole seconds; grace may be zero to go directly to the test card. The JSON `timing` object in the settings file uses:
 
 ```json
 "timing": {"work_seconds": 1200, "grace_seconds": 180, "break_seconds": 300}
@@ -31,9 +31,13 @@ Work, grace, and break durations are configurable in the editor's **Intervals / 
 
 Omitted durations use their defaults. Values must fit unsigned 32-bit seconds. Saved duration changes reload without resetting work debt or observed inactivity; shortening a duration can therefore make a phase or break complete immediately.
 
-The editor's slider accepts an exact numeric value from 0 to 100. Selecting 100 does **not** trigger the test card. Each effect has an independent toggle, entry level, and maximum strength. Settings are saved to `$XDG_CONFIG_HOME/bork/settings.json` (normally `~/.config/bork/settings.json`). Background operation reloads saved changes within one second without resetting work debt.
+The preview’s play/pause button and timeline compress a clean desktop, the complete grace curve, and the overtime test card into 15 seconds. Playback stops on the card; playing again restarts. Scrubbing pauses progression, not shader animation. Only the cycle clock is accelerated. A zero-length grace goes straight from the clean desktop to the card.
 
-A desktop trial requires confirmation, lasts five seconds, and restores the current background state. It also works while the background timer is running: the display guardian temporarily overrides the effect, while the controller continues counting normally. Closing the editor ends its trial; editor failure cannot extend it. Trial deadlines use boot time, so suspension does not extend a trial; locking cancels it.
+**Strength** controls overall interference without changing individual effect tuning. **Save settings** applies timing and strength to `$XDG_CONFIG_HOME/bork/settings.json` (normally `~/.config/bork/settings.json`). Background operation reloads saved changes within one second without resetting work debt. Effect toggles, entry levels, maxima, and the grace curve remain available through the configuration file and CLI rather than the preview UI.
+
+Use the image menu at the bottom-left of the preview to choose a PNG, JPEG, or WebP screenshot. The path is remembered immediately without saving other unfinished edits; **Reset to sample** appears only for a custom image. Images stay local and never become desktop capture. Missing or invalid images fall back to the bundled sample with an error. The native file chooser uses the desktop’s XDG portal (or Zenity fallback). Decoding is limited to 64 MiB files, 8192 pixels per side and a 128 MiB decoder allocation budget; large images are reduced to at most 4096 pixels per side.
+
+**Live Preview** pauses playback, asks for confirmation, applies the displayed interference or break card for five seconds, and restores the current background state. It also works while the background timer is running: the display guardian temporarily overrides the effect, while the controller continues counting normally. Closing the editor ends its trial; editor failure cannot extend it. Trial deadlines use boot time, so suspension does not extend a trial; locking cancels it.
 
 ## Configuration CLI
 
@@ -52,7 +56,7 @@ bork config unset timing.break_seconds   # Restore only this key's default
 bork config path                         # Print the settings file location
 ```
 
-Keys are `timing.work_seconds`, `timing.grace_seconds`, `timing.break_seconds`, `curve`, and `enabled`, `entry`, `maximum` under each of `tears`, `colour`, `bands`, `noise`, and `ghost`. Values are JSON numbers or booleans, not strings. Curve accepts 1.01–5, effect entry 0–99, and maximum 0–1. Timing uses the whole-second ranges described above.
+Keys include `strength` (0–1, default 1), `preview_image` (an image path string or `null` for the sample), `timing.work_seconds`, `timing.grace_seconds`, `timing.break_seconds`, `curve`, and `enabled`, `entry`, `maximum` under each of `tears`, `colour`, `bands`, `noise`, and `ghost`. Effect and timing values are JSON numbers or booleans, not strings. Curve accepts 1.01–5, effect entry 0–99, and maximum 0–1. Timing uses the whole-second ranges described above.
 
 `get` prints one JSON scalar. `set` and `unset` are silent on success; they validate the complete settings before atomically saving, preserve other effective values, and leave the file untouched on failure. Unknown keys, object-valued groups, and invalid values are errors with a nonzero exit status. `unset` saves the default value rather than deleting the key. The running timer reloads changes within one second without resetting debt. These commands do not activate effects themselves; changing settings can change the running timer's phase or display intent through its normal reload.
 

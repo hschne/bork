@@ -61,7 +61,7 @@ fn defaults_are_readable_without_creating_a_file_or_connecting_to_a_session() {
     let values: Value = serde_json::from_str(&config.success(&["list", "--json"])).unwrap();
     assert_eq!(values["timing.break_seconds"], 300);
     assert_eq!(values["curve"], 2.0);
-    assert_eq!(values.as_object().unwrap().len(), 19);
+    assert_eq!(values.as_object().unwrap().len(), 21);
     for (key, expected) in values.as_object().unwrap() {
         let actual: Value = serde_json::from_str(&config.success(&["get", key])).unwrap();
         assert_eq!(&actual, expected);
@@ -93,6 +93,8 @@ fn updates_preserve_other_values_and_unset_restores_only_one_default() {
     config.success(&["set", "tears.enabled", "false"]);
     config.success(&["set", "colour.maximum", "0.25"]);
     config.success(&["set", "curve", "3.5"]);
+    config.success(&["set", "strength", "0.25"]);
+    config.success(&["set", "preview_image", "\"/tmp/desktop.png\""]);
     config.success(&["unset", "timing.break_seconds"]);
     let values: Value = serde_json::from_str(&config.success(&["list", "--json"])).unwrap();
     assert_eq!(values["timing.break_seconds"], 300);
@@ -100,6 +102,8 @@ fn updates_preserve_other_values_and_unset_restores_only_one_default() {
     assert_eq!(values["tears.enabled"], false);
     assert_eq!(values["colour.maximum"], 0.25);
     assert_eq!(values["curve"], 3.5);
+    assert_eq!(values["strength"], 0.25);
+    assert_eq!(values["preview_image"], "/tmp/desktop.png");
 }
 
 #[test]
@@ -121,6 +125,9 @@ fn invalid_updates_and_unknown_keys_leave_the_file_untouched() {
         vec!["set", "timing.work_seconds", "null"],
         vec!["set", "timing.work_seconds", "[1]"],
         vec!["set", "timing.work_seconds", "\"1200\""],
+        vec!["set", "strength", "1.1"],
+        vec!["set", "strength", "-0.1"],
+        vec!["set", "preview_image", "42"],
         vec!["set", "curve", "0"],
         vec!["set", "curve", "NaN"],
         vec!["set", "tears.entry", "100"],

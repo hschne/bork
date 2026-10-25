@@ -16,7 +16,7 @@ pub(super) enum TrialDecision {
 struct Trial {
     id: u64,
     deadline: Duration,
-    shader: String,
+    state: DisplayState,
 }
 
 pub(super) struct DisplayOwner {
@@ -60,35 +60,35 @@ impl DisplayOwner {
 
     /// Protocol refusals are nonfatal; failed display mutations require recovery.
     pub(super) fn trial(&mut self, request: TrialRequest) -> Result<TrialDecision> {
-        match request {
-            TrialRequest::Start { shader } => {
-                if self.trial.is_some() {
-                    return Ok(TrialDecision::Busy);
-                }
-                if self.hypr.locked()? {
-                    return Ok(TrialDecision::Locked);
-                }
-                self.next_trial_id = self
-                    .next_trial_id
-                    .checked_add(1)
-                    .context("Trial IDs exhausted")?;
-                let id = self.next_trial_id;
-                self.trial = Some(Trial {
-                    id,
-                    shader,
-                    deadline: boot_time() + Duration::from_secs(5),
-                });
-                self.reconcile()?;
-                Ok(TrialDecision::Accepted(id))
-            }
+        let state = match request {
+            TrialRequest::Start { shader } => DisplayState::Interference { shader },
+            TrialRequest::StartCard { remaining } => DisplayState::TestCard { remaining },
             TrialRequest::Cancel { id } => {
                 if self.trial.as_ref().is_some_and(|trial| trial.id == id) {
                     self.trial = None;
                     self.reconcile()?;
                 }
-                Ok(TrialDecision::Accepted(id))
+                return Ok(TrialDecision::Accepted(id));
             }
+        };
+        if self.trial.is_some() {
+            return Ok(TrialDecision::Busy);
         }
+        if self.hypr.locked()? {
+            return Ok(TrialDecision::Locked);
+        }
+        self.next_trial_id = self
+            .next_trial_id
+            .checked_add(1)
+            .context("Trial IDs exhausted")?;
+        let id = self.next_trial_id;
+        self.trial = Some(Trial {
+            id,
+            state,
+            deadline: boot_time() + Duration::from_secs(5),
+        });
+        self.reconcile()?;
+        Ok(TrialDecision::Accepted(id))
     }
 
     pub(super) fn tick(&mut self) -> Result<()> {
@@ -120,9 +120,7 @@ impl DisplayOwner {
             return self.clear();
         }
         let desired = match &self.trial {
-            Some(trial) => DisplayState::Interference {
-                shader: trial.shader.clone(),
-            },
+            Some(trial) => trial.state.clone(),
             None => self.background.clone(),
         };
         match desired {

@@ -137,3 +137,38 @@ fn bounded_smooth_monotonic_and_toggle() {
     assert!(Glitchiness::try_from(f32::NAN).is_err());
     assert!(s.set_curve(f32::INFINITY).is_err());
 }
+
+#[test]
+fn global_strength_scales_tuning_without_rewriting_it() {
+    let mut settings = Settings::default();
+    let effect = settings.effect(EffectKind::Tears);
+    settings.set_strength(0.5).unwrap();
+    assert_eq!(settings.effect(EffectKind::Tears), effect);
+    assert!(
+        settings
+            .shader_body(Glitchiness::MAXIMUM)
+            .contains("TEARS = 0.34999999")
+    );
+    settings.set_strength(0.0).unwrap();
+    assert!(!settings.has_visible_effect_at(Glitchiness::MAXIMUM));
+    for invalid in [f32::NAN, f32::INFINITY, -0.1, 1.1] {
+        assert!(settings.set_strength(invalid).is_err());
+        assert_eq!(settings.strength(), 0.0);
+    }
+    let mut json = serde_json::to_value(Settings::default()).unwrap();
+    json.as_object_mut().unwrap().remove("strength");
+    json.as_object_mut().unwrap().remove("preview_image");
+    assert_eq!(
+        serde_json::from_value::<Settings>(json.clone()).unwrap(),
+        Settings::default()
+    );
+    for invalid in [
+        serde_json::json!(-0.1),
+        serde_json::json!(1.1),
+        serde_json::json!("1"),
+        serde_json::Value::Null,
+    ] {
+        json["strength"] = invalid;
+        assert!(serde_json::from_value::<Settings>(json.clone()).is_err());
+    }
+}

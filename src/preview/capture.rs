@@ -23,6 +23,7 @@ impl Capture {
         &mut self,
         ctx: &egui::Context,
         level: f32,
+        strength: f32,
         test_card: bool,
         tears_enabled: bool,
     ) {
@@ -66,7 +67,7 @@ impl Capture {
                     std::fs::write(
                         path.with_extension("json"),
                         serde_json::to_vec_pretty(&serde_json::json!({
-                            "level": level, "test_card": test_card, "tears_enabled": tears_enabled,
+                            "level": level, "strength": strength, "test_card": test_card, "tears_enabled": tears_enabled,
                         }))?,
                     )?;
                     Ok(())
@@ -95,11 +96,11 @@ mod tests {
         // Discard egui's initial layout/font repaint requests.
         for _ in 0..3 {
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                capture.update(ctx, 0.0, true, true)
+                capture.update(ctx, 0.0, 1.0, true, true)
             });
         }
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, true, true)
+            capture.update(ctx, 0.0, 1.0, true, true)
         });
         let viewport = &output.viewport_output[&egui::ViewportId::ROOT];
         assert!(viewport.repaint_delay > Duration::from_millis(100));
@@ -108,7 +109,7 @@ mod tests {
 
         capture.started = Instant::now() - Duration::from_secs(2);
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, true, true)
+            capture.update(ctx, 0.0, 1.0, true, true)
         });
         assert!(
             output.viewport_output[&egui::ViewportId::ROOT]
@@ -118,7 +119,7 @@ mod tests {
         );
         assert!(capture.requested);
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, true, true)
+            capture.update(ctx, 0.0, 1.0, true, true)
         });
         assert!(
             !output.viewport_output[&egui::ViewportId::ROOT]

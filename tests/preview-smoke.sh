@@ -24,36 +24,43 @@ function main() {
   mkdir -p "$scratch/home"
   DISPLAY=":$(cat "$scratch/display")"
   export DISPLAY HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" LIBGL_ALWAYS_SOFTWARE=1
-  unset WAYLAND_DISPLAY
-  for mode in default maximum test-card reopened; do
+  unset WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
+  for mode in default tuned test-card reopened confirmation; do
     BORK_TEST_CAPTURE="$output/preview-$mode.png" timeout 15 "$app" preview >"$output/preview-$mode.log" 2>&1 &
     app_pid=$!
     window="$(timeout 8 xdotool search --sync --onlyvisible --name 'Bork')"
     xdotool windowfocus --sync "$window"
-    if [[ "$mode" == maximum ]]; then
-      xdotool mousemove --window "$window" 215 169 click --repeat 2 --delay 100 1
-      xdotool key ctrl+a
+    # The window becomes visible before egui completes its first layout pass.
+    sleep .3
+    if [[ "$mode" == tuned ]]; then
+      xdotool mousemove --window "$window" 1087 691 mousedown 1
       sleep .1
-      xdotool type --clearmodifiers --delay 100 '100'
+      xdotool mousemove --window "$window" 697 691
       sleep .1
-      xdotool key Return
-      xdotool mousemove --window "$window" 15 326 click 1
-      xdotool mousemove --window "$window" 50 554 click 1
+      xdotool mouseup 1
+      sleep .1
+      xdotool mousemove --window "$window" 1050 824 click 1
     elif [[ "$mode" == test-card ]]; then
-      xdotool mousemove --window "$window" 15 226 click 1
+      xdotool mousemove --window "$window" 880 548 mousedown 1
+      sleep .1
+      xdotool mouseup 1
+    elif [[ "$mode" == confirmation ]]; then
+      xdotool mousemove --window "$window" 1050 548 mousedown 1
+      sleep .1
+      xdotool mouseup 1
     fi
     wait "$app_pid" || die "Preview $mode failed; see $output/preview-$mode.log"
     [[ -s "$output/preview-$mode.png" ]] || die "Screenshot missing for $mode"
     [[ ! -s "$output/preview-$mode.log" ]] || die "Preview emitted diagnostics; inspect $output/preview-$mode.log"
-    if [[ "$mode" == maximum ]]; then grep -q '"level": 100.0' "$output/preview-$mode.json" || die "Numeric maximum was not entered"; fi
-    if [[ "$mode" == test-card ]]; then grep -q '"test_card": true' "$output/preview-$mode.json" || die "Card toggle failed"; fi
-    if [[ "$mode" == reopened ]]; then grep -q '"tears_enabled": false' "$output/preview-$mode.json" || die "Saved toggle was not reopened"; fi
+    if [[ "$mode" == tuned ]]; then grep -q '"strength": 0.25' "$output/preview-$mode.json" || die "Strength was not changed"; fi
+    if [[ "$mode" == test-card ]]; then grep -q '"test_card": true' "$output/preview-$mode.json" || die "Timeline did not reach the break card"; fi
+    if [[ "$mode" == reopened ]]; then grep -q '"strength": 0.25' "$output/preview-$mode.json" || die "Saved strength was not reopened"; fi
   done
   [[ -f "$scratch/config/bork/settings.json" ]] || die "Save did not create settings"
-  grep -q '"enabled": false' "$scratch/config/bork/settings.json" || die "Toggle was not saved"
+  grep -q '"strength": 0.25' "$scratch/config/bork/settings.json" || die "Strength was not saved"
   cp "$scratch/config/bork/settings.json" "$output/preview-saved-settings.json"
   "$app" --version >"$output/version.txt"
-  echo "Preview default, maximum, test card, save and reopen passed in isolated Xvfb."
+  echo "Preview default, strength, timeline, save/reopen and Live Preview confirmation captured in isolated Xvfb."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

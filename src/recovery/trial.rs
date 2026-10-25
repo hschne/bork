@@ -12,6 +12,7 @@ use std::{
 #[derive(Serialize, Deserialize)]
 pub enum TrialRequest {
     Start { shader: String },
+    StartCard { remaining: u64 },
     Cancel { id: u64 },
 }
 
@@ -42,9 +43,16 @@ pub struct DesktopTrial {
 
 impl DesktopTrial {
     pub fn start(hypr: &Hyprland, shader: String) -> Result<Self> {
+        Self::start_request(hypr, TrialRequest::Start { shader })
+    }
+
+    pub fn start_card(hypr: &Hyprland, remaining: u64) -> Result<Self> {
+        Self::start_request(hypr, TrialRequest::StartCard { remaining })
+    }
+
+    fn start_request(hypr: &Hyprland, request: TrialRequest) -> Result<Self> {
         let path = hypr.runtime_directory()?;
         private_directory(&path)?;
-        let request = TrialRequest::Start { shader };
         // Retry only a definite failure to connect. An uncertain mutation is never resent.
         let (owner, id) = match request_trial(&path, &request) {
             Ok(id) => (None, id),

@@ -8,6 +8,14 @@ pub struct Canvas {
 }
 
 impl Canvas {
+    pub(crate) fn from_image(image: image::RgbaImage) -> Self {
+        Self {
+            width: image.width() as usize,
+            height: image.height() as usize,
+            rgba: image.into_raw(),
+        }
+    }
+
     pub fn width(&self) -> usize {
         self.width
     }
@@ -101,128 +109,22 @@ impl Canvas {
 }
 
 pub fn desktop() -> Canvas {
-    let mut c = Canvas::new(1280, 720);
-    c.rect(0, 0, 1280, 720, [23, 35, 40]);
-    c.rect(12, 10, 1256, 31, [14, 23, 28]);
-    c.text("1   2   3   4   5", 30, 20, 1, [135, 151, 164]);
-    c.text("nixfiles / main", 550, 20, 1, [199, 207, 202]);
-    c.text("wifi   vol 42%   14:20", 1040, 20, 1, [168, 186, 184]);
-    c.rect(20, 56, 795, 642, [16, 21, 30]);
-    c.rect(20, 56, 795, 34, [32, 42, 54]);
-    c.text(
-        "nvim   hosts/rocinante/default.nix",
-        37,
-        68,
-        2,
-        [198, 212, 226],
-    );
-    c.rect(20, 90, 172, 580, [21, 28, 39]);
-    for (i, file) in [
-        "EXPLORER",
-        "nixfiles",
-        "  hosts/",
-        "  rocinante/",
-        "  default.nix",
-        "  modules/",
-        "  home/",
-        "  flake.nix",
-    ]
-    .iter()
-    .enumerate()
-    {
-        c.text(file, 32, 108 + i * 28, 1, [132, 146, 170]);
-    }
-    for (i, line) in [
-        "{ config, pkgs, ... }:",
-        "",
-        "{",
-        "  imports = [",
-        "    ./hardware-configuration.nix",
-        "    ../../modules/desktop",
-        "  ];",
-        "",
-        "  networking.hostName = \"rocinante\";",
-        "",
-        "  programs.hyprland = {",
-        "    enable = true;",
-        "    xwayland.enable = true;",
-        "  };",
-        "",
-        "  services.pipewire = {",
-        "    enable = true;",
-        "    pulse.enable = true;",
-        "  };",
-        "",
-        "  system.stateVersion = \"25.05\";",
-        "}",
-    ]
-    .iter()
-    .enumerate()
-    {
-        c.text(&format!("{:2}", i + 1), 205, 108 + i * 24, 1, [72, 84, 106]);
-        c.text(
-            line,
-            245,
-            108 + i * 24,
-            2,
-            if line.contains('"') {
-                [166, 206, 153]
-            } else {
-                [187, 200, 215]
-            },
-        );
-    }
-    c.rect(20, 670, 795, 28, [38, 56, 67]);
-    c.text(
-        " NORMAL   main                       nix   utf-8   12:1",
-        34,
-        680,
-        1,
-        [189, 209, 209],
-    );
-    c.rect(831, 56, 429, 292, [17, 24, 34]);
-    c.rect(831, 56, 429, 34, [32, 42, 54]);
-    c.text("foot  ~/Source/nixfiles", 846, 68, 2, [198, 212, 226]);
-    for (i, line) in [
-        "$ nix flake check",
-        "evaluating flake...",
-        "checking NixOS configuration",
-        "checking home configuration",
-        "",
-        "checks passed",
-        "",
-        "$ git diff --stat",
-        " hosts/rocinante/default.nix",
-        " 1 file changed, 4 insertions(+)",
-        "",
-        "$ _",
-    ]
-    .iter()
-    .enumerate()
-    {
-        c.text(line, 848, 104 + i * 19, 1, [148, 168, 189]);
-    }
-    c.rect(831, 364, 429, 334, [231, 228, 217]);
-    c.rect(831, 364, 429, 34, [206, 207, 198]);
-    c.text("notes.md - reading", 846, 375, 1, [73, 84, 79]);
-    c.text("A quieter desktop.", 858, 430, 2, [40, 59, 54]);
-    for (i, line) in [
-        "The best tools disappear until",
-        "you need them. A good environment",
-        "leaves room to finish a thought.",
-        "",
-        "Small defaults. Fewer interruptions.",
-        "Time to look away.",
-    ]
-    .iter()
-    .enumerate()
-    {
-        c.text(line, 858, 480 + i * 25, 1, [89, 100, 94]);
-    }
-    c
+    let image = image::load_from_memory(include_bytes!("../assets/preview-desktop.png"))
+        .expect("Embedded preview image is valid")
+        .into_rgba8();
+    Canvas::from_image(image)
 }
 
 pub fn test_card(width: usize, height: usize, remaining: u64) -> Canvas {
+    test_card_for_duration(width, height, remaining, 300)
+}
+
+pub(crate) fn test_card_for_duration(
+    width: usize,
+    height: usize,
+    remaining: u64,
+    total: u64,
+) -> Canvas {
     // Draw at the storyboard's native size, then nearest-scale for software Wayland buffers.
     let mut c = Canvas::new(1280, 720);
     let colours = [
@@ -269,14 +171,21 @@ pub fn test_card(width: usize, height: usize, remaining: u64) -> Canvas {
         2,
         [183, 192, 178],
     );
-    let remaining = remaining.min(300);
-    let label = format!("{:02}:{:02}  /  05:00", remaining / 60, remaining % 60);
+    let total = total.max(1);
+    let remaining = remaining.min(total);
+    let label = format!(
+        "{:02}:{:02}  /  {:02}:{:02}",
+        remaining / 60,
+        remaining % 60,
+        total / 60,
+        total % 60
+    );
     c.text(&label, 460, 414, 3, [217, 232, 178]);
     c.rect(426, 450, 428, 3, [63, 73, 59]);
     c.rect(
         426,
         450,
-        (428 * (300 - remaining) / 300) as usize,
+        (428 * (total - remaining) / total) as usize,
         3,
         [217, 232, 178],
     );

@@ -1,140 +1,200 @@
-//! Editor controls edit only validated tuning, never guardian transport state.
-use super::Preview;
-use crate::{
-    config,
-    effect::{Effect, EffectKind, Glitchiness},
-};
-use eframe::egui::{self, Color32, RichText};
+//! The player previews progression; settings expose only timing and global gain.
+use super::{Preview, playback::DEMO_SECONDS};
+use crate::config;
+use eframe::egui::{self, Align, Layout};
+use std::time::Instant;
 
 impl Preview {
-    pub(super) fn controls(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(14.0);
-        ui.label(
-            RichText::new("BORK / EDITOR")
-                .monospace()
-                .color(Color32::from_rgb(212, 230, 162)),
+    pub(super) fn image_menu(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let label = self
+            .settings
+            .preview_image
+            .as_ref()
+            .and_then(|path| path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Sample desktop".into());
+        let menu_rect = egui::Rect::from_min_size(
+            rect.left_bottom() + egui::vec2(10.0, -40.0),
+            egui::vec2(240.0, 32.0),
         );
-        ui.add_space(12.0);
-        ui.heading("Shape the interference.");
-        ui.label("A quiet warning. Then a lost signal.");
-        ui.separator();
-        ui.label("GLITCHINESS");
-        let mut level = self.level.value();
-        if ui
-            .add(
-                egui::Slider::new(&mut level, 0.0..=100.0)
-                    .step_by(0.1)
-                    .text("/ 100"),
-            )
-            .changed()
-        {
-            match Glitchiness::try_from(level) {
-                Ok(level) => self.level = level,
-                Err(error) => self.status = error.to_string(),
-            }
-        }
-        ui.label("Type an exact value in the number field.");
-        ui.checkbox(&mut self.test_card, "Preview steady test card");
-        ui.small("100 is maximum interference, not the deadline.");
-        ui.separator();
-        egui::Grid::new("effects")
-            .num_columns(3)
-            .spacing([10.0, 12.0])
-            .show(ui, |ui| {
-                ui.strong("Effect");
-                ui.strong("Entry / 100");
-                ui.strong("Max / 1");
-                ui.end_row();
-                for (name, kind) in [
-                    ("Thin tears", EffectKind::Tears),
-                    ("Colour split", EffectKind::Colour),
-                    ("Wide bands", EffectKind::Bands),
-                    ("Static", EffectKind::Noise),
-                    ("Ghosting", EffectKind::Ghost),
-                ] {
-                    let effect = self.settings.effect(kind);
-                    let (mut enabled, mut entry, mut maximum) =
-                        (effect.enabled(), effect.entry(), effect.maximum());
-                    ui.checkbox(&mut enabled, name);
-                    ui.add(
-                        egui::DragValue::new(&mut entry)
-                            .range(0.0..=99.0)
-                            .speed(0.2),
-                    );
-                    ui.add(
-                        egui::DragValue::new(&mut maximum)
-                            .range(0.0..=1.0)
-                            .speed(0.01)
-                            .max_decimals(2),
-                    );
-                    match Effect::new(enabled, entry, maximum) {
-                        Ok(effect) => self.settings.set_effect(kind, effect),
-                        Err(error) => self.status = error.to_string(),
+        ui.scope_builder(egui::UiBuilder::new().max_rect(menu_rect), |ui| {
+            ui.set_max_width(240.0);
+            ui.add_enabled_ui(self.image_pending.is_none(), |ui| {
+                ui.menu_button(label, |ui| {
+                    if ui.button("Choose image…").clicked() {
+                        self.load_image(ui.ctx(), None);
+                        ui.close();
                     }
-                    ui.end_row();
+                    if self.settings.preview_image.is_some()
+                        && ui.button("Reset to sample").clicked()
+                    {
+                        self.scene.reset_image();
+                        self.remember_image(None);
+                        ui.close();
+                    }
+                });
+            });
+        });
+    }
+
+    pub(super) fn transport(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let label = if self.playback.playing {
+                "Pause"
+            } else {
+                "Play"
+            };
+            let response = ui
+                .add_sized(
+                    [32.0, 32.0],
+                    egui::Button::new(if self.playback.playing { "⏸" } else { "▶" }).frame(false),
+                )
+                .on_hover_text(label);
+            response
+                .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+            if response.clicked() {
+                self.playback.toggle(Instant::now());
+            }
+            let mut position = self.playback.position;
+            let width = (ui.available_width() - 210.0).max(60.0);
+            ui.scope(|ui| {
+                ui.spacing_mut().slider_width = width;
+                if ui
+                    .add(egui::Slider::new(&mut position, 0.0..=DEMO_SECONDS).show_value(false))
+                    .on_hover_text("Preview timeline")
+                    .changed()
+                {
+                    self.playback.seek(position);
                 }
             });
+            ui.small(format!("0:{:02} / 0:15", self.playback.position as u32));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if self.trial.is_some() {
+                    if ui.button("End Live Preview").clicked()
+                        && let Some(trial) = self.trial.take()
+                    {
+                        self.status = match trial.finish() {
+                            Ok(()) => "Desktop restored.".into(),
+                            Err(error) => format!("Recovery error: {error:#}"),
+                        };
+                    }
+                } else if ui.button("Live Preview").clicked() {
+                    self.playback.pause();
+                    self.confirm_trial = true;
+                }
+            });
+        });
+        let phase = if self.playback.test_card(&self.settings) {
+            "Overtime · break required".into()
+        } else if self.playback.position < 1.0 {
+            "Clean desktop".into()
+        } else {
+            format!(
+                "Grace · {:.0}% interference",
+                self.playback.level(&self.settings).value()
+            )
+        };
+        ui.weak(phase);
+    }
+
+    pub(super) fn controls(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
-        let mut curve = self.settings.curve().value();
-        if ui
-            .add(egui::Slider::new(&mut curve, 1.01..=5.0).text("Grace curve"))
-            .changed()
-            && let Err(error) = self.settings.set_curve(curve)
-        {
-            self.status = error.to_string();
+        if ui.available_width() >= 760.0 {
+            ui.columns(2, |columns| {
+                self.timing(&mut columns[0]);
+                self.strength(&mut columns[1]);
+            });
+        } else {
+            self.timing(ui);
+            ui.add_space(16.0);
+            self.strength(ui);
         }
-        ui.small("Timing only: larger powers delay escalation.");
-        ui.separator();
-        ui.label("INTERVALS / SECONDS");
+        ui.add_space(14.0);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui.button("Save settings").clicked() {
+                self.status = match config::save(&self.path, &self.settings) {
+                    Ok(()) => "Settings saved.".into(),
+                    Err(error) => format!("Save failed: {error:#}"),
+                };
+            }
+            ui.label(&self.status);
+        });
+    }
+
+    fn timing(&mut self, ui: &mut egui::Ui) {
+        ui.strong("Timing");
+        ui.add_space(6.0);
         let timing = &mut self.settings.timing;
         let mut work = timing.work_seconds.get();
         let mut grace = timing.grace_seconds;
         let mut rest = timing.break_seconds.get();
-        egui::Grid::new("intervals").show(ui, |ui| {
-            for (label, value, minimum) in [
-                ("Work", &mut work, 1),
-                ("Grace", &mut grace, 0),
-                ("Break", &mut rest, 1),
-            ] {
-                ui.label(label);
-                ui.add(egui::DragValue::new(value).range(minimum..=u32::MAX));
-                ui.end_row();
-            }
+        egui::Grid::new("timing")
+            .spacing([28.0, 10.0])
+            .show(ui, |ui| {
+                for (label, value, minimum, unit) in [
+                    ("Work", &mut work, 1, "min"),
+                    ("Grace", &mut grace, 0, "min"),
+                    ("Break", &mut rest, 1, "min without input"),
+                ] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        ui.add_sized(
+                            [64.0, 28.0],
+                            egui::DragValue::new(value)
+                                .range(minimum..=u32::MAX)
+                                .speed(15.0)
+                                .update_while_editing(false)
+                                .custom_formatter(|seconds, _| {
+                                    format!("{:.2}", seconds / 60.0)
+                                        .trim_end_matches('0')
+                                        .trim_end_matches('.')
+                                        .to_owned()
+                                })
+                                .custom_parser(|text| {
+                                    text.parse::<f64>().ok().map(|minutes| minutes * 60.0)
+                                }),
+                        );
+                        ui.weak(unit);
+                    });
+                    ui.end_row();
+                }
+            });
+        timing.work_seconds = work.try_into().unwrap();
+        timing.grace_seconds = grace;
+        timing.break_seconds = rest.try_into().unwrap();
+    }
+
+    fn strength(&mut self, ui: &mut egui::Ui) {
+        ui.strong("Interference");
+        ui.add_space(6.0);
+        let mut strength = self.settings.strength();
+        ui.horizontal(|ui| {
+            ui.label("Strength");
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.weak(
+                    ["Off", "Low", "Medium", "Strong", "Maximum"]
+                        [(strength * 4.0).round() as usize],
+                );
+            });
         });
-        if let (Some(work), Some(rest)) = (work.try_into().ok(), rest.try_into().ok()) {
-            timing.work_seconds = work;
-            timing.grace_seconds = grace;
-            timing.break_seconds = rest;
-        }
-        ui.small("Grace may be zero. A full idle break clears work debt.");
-        ui.small("Locking stays with your existing lockscreen.");
-        ui.separator();
-        if ui.button("Save settings").clicked() {
-            self.status = match config::save(&self.path, &self.settings) {
-                Ok(()) => format!("Saved {}", self.path.display()),
-                Err(error) => format!("Save failed: {error:#}"),
-            };
-        }
+        ui.spacing_mut().slider_width = (ui.available_width() - 8.0).max(60.0);
         if ui
-            .add_enabled(
-                self.trial.is_none(),
-                egui::Button::new("Try on desktop · 5 seconds"),
+            .add(
+                egui::Slider::new(&mut strength, 0.0..=1.0)
+                    .step_by(0.25)
+                    .show_value(false),
             )
-            .clicked()
+            .changed()
+            && let Err(error) = self.settings.set_strength(strength)
         {
-            self.confirm_trial = true;
+            self.status = error.to_string();
         }
-        if self.trial.is_some()
-            && ui.button("End desktop trial now").clicked()
-            && let Some(guardian) = self.trial.take()
-        {
-            self.status = match guardian.finish() {
-                Ok(()) => "Desktop restored.".into(),
-                Err(e) => format!("Recovery error: {e:#}"),
-            };
-        }
-        ui.small("Emergency: bork reset");
-        ui.add_space(8.0);
-        ui.label(&self.status);
+        ui.horizontal(|ui| {
+            ui.weak("Off");
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.weak("Maximum");
+            });
+        });
     }
 }

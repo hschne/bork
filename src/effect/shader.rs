@@ -8,11 +8,11 @@ impl Settings {
         let normalized = level.value() / 100.0;
         format!(
             "const float TEARS = {:.8};\nconst float COLOUR = {:.8};\nconst float BANDS = {:.8};\nconst float NOISE = {:.8};\nconst float GHOST = {:.8};\nconst float FREQUENCY = {:.8};\nconst float DURATION = {:.8};\n{}",
-            self.tears.strength(level),
-            self.colour.strength(level),
-            self.bands.strength(level),
-            self.noise.strength(level),
-            self.ghost.strength(level),
+            self.tears.strength(level) * self.strength(),
+            self.colour.strength(level) * self.strength(),
+            self.bands.strength(level) * self.strength(),
+            self.noise.strength(level) * self.strength(),
+            self.ghost.strength(level) * self.strength(),
             0.12 + 0.73 * normalized.powi(2),
             0.08 + 1.02 * normalized.powf(1.2),
             include_str!("../signal.glsl")
