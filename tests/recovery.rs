@@ -490,6 +490,25 @@ fn unlock_reinstates_latest_background_without_a_redundant_publication() {
 }
 
 #[test]
+fn unlock_keeps_clean_background_until_fresh_timer_publication() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    fake.locked.store(true, Ordering::Relaxed);
+    fake.wait_original();
+    assert_eq!(process.send(Message::Display(DisplayState::Work)), "ok");
+    fake.locked.store(false, Ordering::Relaxed);
+    let deadline = Instant::now() + Duration::from_millis(400);
+    while Instant::now() < deadline {
+        assert_eq!(process.send(Message::Heartbeat), "ok");
+        assert!(fake.original(), "Unlock reinstated a stale effect");
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(process.install(false), "ok");
+    assert!(!fake.original(), "Fresh timer intent was not applied");
+}
+
+#[test]
 fn locking_cancels_trial_and_old_receipt_cannot_cancel_its_replacement() {
     use recovery::{TrialRequest, request_trial};
     let fake = Fake::new();

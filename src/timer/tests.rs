@@ -500,6 +500,74 @@ fn tick_publishes_transitions_and_reports_status_from_the_same_snapshot() {
 }
 
 #[test]
+fn locked_ticks_clear_cached_effects_without_changing_break_accounting() {
+    for returned_at in [1500, 1700] {
+        let mut timer = Timer::new(0);
+        let settings = Settings::default();
+        let overtime = timer.update(
+            Observation {
+                now: 1380,
+                ..Default::default()
+            },
+            &settings,
+            None,
+        );
+        assert_eq!(
+            overtime.display,
+            Some(DisplayUpdate::Publish(Publication::TestCard(300)))
+        );
+        let locked = timer.update(
+            Observation {
+                now: 1400,
+                locked: true,
+                idle_since: Some(1400),
+                ..Default::default()
+            },
+            &settings,
+            None,
+        );
+        assert_eq!(locked.status.phase, Some(Phase::Overtime));
+        assert_eq!(locked.status.work_seconds, Some(1400));
+        assert_eq!(locked.status.break_remaining_seconds, Some(300));
+        assert_eq!(
+            locked.display,
+            Some(DisplayUpdate::Publish(Publication::Work))
+        );
+        let waiting = timer.update(
+            Observation {
+                now: returned_at - 1,
+                locked: true,
+                idle_since: Some(1400),
+                ..Default::default()
+            },
+            &settings,
+            None,
+        );
+        assert_eq!(waiting.display, None);
+        let returned = timer.update(
+            Observation {
+                now: returned_at,
+                resumed: true,
+                ..Default::default()
+            },
+            &settings,
+            None,
+        );
+        if returned_at == 1500 {
+            assert_eq!(returned.status.work_seconds, Some(1500));
+            assert_eq!(
+                returned.display,
+                Some(DisplayUpdate::Publish(Publication::TestCard(300)))
+            );
+        } else {
+            assert_eq!(returned.status.work_seconds, Some(0));
+            assert_eq!(returned.status.phase, Some(Phase::Work));
+            assert_eq!(returned.display, None);
+        }
+    }
+}
+
+#[test]
 fn commands_cancel_trials_even_if_the_normal_display_is_already_clean() {
     let settings = Settings::default();
     let mut timer = Timer::new(0);

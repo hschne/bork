@@ -68,13 +68,29 @@ pub(super) fn show(
             }
             if response.has_focus() && ui.is_enabled() {
                 let (dx, dy) = ui.input_mut(|input| {
-                    let modifiers = input.modifiers;
-                    let step = if modifiers.shift { 5.0 } else { 1.0 };
-                    let dx = input.consume_key(modifiers, egui::Key::ArrowRight) as u8 as f32
-                        - input.consume_key(modifiers, egui::Key::ArrowLeft) as u8 as f32;
-                    let dy = input.consume_key(modifiers, egui::Key::ArrowUp) as u8 as f32
-                        - input.consume_key(modifiers, egui::Key::ArrowDown) as u8 as f32;
-                    (dx * step / 100.0, dy * step)
+                    let (mut dx, mut dy) = (0.0, 0.0);
+                    input.events.retain(|event| {
+                        let egui::Event::Key {
+                            key,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } = event
+                        else {
+                            return true;
+                        };
+                        // Use modifiers at the key press, not at the end of the frame.
+                        let step = if modifiers.shift { 5.0 } else { 1.0 };
+                        match key {
+                            egui::Key::ArrowRight => dx += step,
+                            egui::Key::ArrowLeft => dx -= step,
+                            egui::Key::ArrowUp => dy += step,
+                            egui::Key::ArrowDown => dy -= step,
+                            _ => return true,
+                        }
+                        false
+                    });
+                    (dx / 100.0, dy)
                 });
                 if dx != 0.0 || dy != 0.0 {
                     let point = points[i];
@@ -200,6 +216,61 @@ fn move_point(points: &mut [CurvePoint; 4], index: usize, progress: f32, intensi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arrow_step_uses_key_event_modifiers_after_shift_changes_in_the_same_frame() {
+        for (key, direction) in [(egui::Key::ArrowUp, 1.0), (egui::Key::ArrowDown, -1.0)] {
+            for shifted in [false, true] {
+                let ctx = egui::Context::default();
+                let curve = GraceCurve::default();
+                ctx.data_mut(|data| {
+                    data.insert_temp(egui::Id::new("bork-test-capture"), true);
+                });
+                let mut edited = None;
+                for frame in 0..5 {
+                    let mut input = egui::RawInput::default();
+                    if frame == 2 || frame == 3 {
+                        let (rect, _) = ctx.data(|data| {
+                            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                                "bork-test-target",
+                                "curve-start",
+                            )))
+                            .unwrap()
+                        });
+                        input.events.push(egui::Event::PointerMoved(rect.center()));
+                        input.events.push(egui::Event::PointerButton {
+                            pos: rect.center(),
+                            button: egui::PointerButton::Primary,
+                            pressed: frame == 2,
+                            modifiers: egui::Modifiers::NONE,
+                        });
+                    }
+                    if frame == 4 {
+                        // The modifier has changed again by the time the frame runs.
+                        input.modifiers.shift = !shifted;
+                        input.events.push(egui::Event::Key {
+                            key,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers {
+                                shift: shifted,
+                                ..Default::default()
+                            },
+                        });
+                    }
+                    let _ = ctx.run(input, |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            edited = show(ui, curve, None, 60).unwrap();
+                        });
+                    });
+                }
+                let expected =
+                    curve.points()[0].intensity + direction * if shifted { 5.0 } else { 1.0 };
+                assert_eq!(edited.unwrap().points()[0].intensity, expected);
+            }
+        }
+    }
 
     #[test]
     fn dragging_cannot_cross_neighbors_or_move_the_start_in_time() {

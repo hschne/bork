@@ -235,7 +235,12 @@ impl Timer {
             Some(Command::Status) | None => (),
         }
         let snapshot = self.snapshot(now, settings.curve);
-        let next = Publication::for_phase(snapshot.display_phase(), settings);
+        // Keep the guardian's cached intent clean until the post-unlock tick.
+        let next = if self.locked {
+            Publication::Work
+        } else {
+            Publication::for_phase(snapshot.display_phase(), settings)
+        };
         let display = if matches!(command, Some(Command::Pause | Command::Reset)) {
             Some(DisplayUpdate::Reset)
         } else if self.published != Some(next) {
