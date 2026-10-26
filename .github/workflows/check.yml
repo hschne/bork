@@ -50,7 +50,7 @@ jobs:
           archive="bork-${version}-${TARGET}.tar.gz"
           mkdir -p "$RUNNER_TEMP/packages"
           tar -C dist -czf "$RUNNER_TEMP/packages/$archive" \
-            bork LICENSE THIRD_PARTY_LICENSES.txt README.md assets
+            bork LICENSE README.md assets
           cd "$RUNNER_TEMP/packages"
           sha256sum "$archive" > "$archive.sha256"
       - name: Upload build

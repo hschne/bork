@@ -6,7 +6,6 @@
 !assets/
 !assets/**
 !LICENSE
-!THIRD_PARTY_LICENSES.txt
 !README.md
 !tests/
 !tests/**

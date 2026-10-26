@@ -25,7 +25,16 @@ impl Renderer {
                 name => fontdb::Family::Name(name),
             };
             let id = database.query(&fontdb::Query {
-                families: &[family, fontdb::Family::SansSerif],
+                // fontdb can map sans-serif to an uninstalled font (for example,
+                // FreeSans on Debian with only DejaVu installed).
+                families: &[
+                    family,
+                    fontdb::Family::SansSerif,
+                    fontdb::Family::Name("DejaVu Sans"),
+                    fontdb::Family::Name("Liberation Sans"),
+                    fontdb::Family::Name("Noto Sans"),
+                    fontdb::Family::Name("FreeSans"),
+                ],
                 ..fontdb::Query::default()
             }).context("No installed font matches the overtime labels; install a system sans-serif font or configure font_family")?;
             database.with_face_data(id, |bytes, index| {

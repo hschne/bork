@@ -85,6 +85,12 @@ Use `bork config list` for effective defaults. Restart the preview after editing
 
 For bar integrations, `bork status` returns JSON; `bork status --format break` prints a break countdown. Use `bork --help` for commands.
 
+## Development
+
+Rust code lives in `src/`; integration and isolated display tests live in `tests/`. Run `mise run check` before submitting changes and `mise run release` for distribution changes (requires Docker). On NixOS, use `nix develop path:./nix` for graphics development.
+
+Contributions welcome. Open an issue or pull request on [GitHub](https://github.com/hschne/bork). Keep changes small and focused. Test display changes in isolated sessions, not on your active desktop.
+
 ## License
 
-[MIT](LICENSE) © Hans Schnedlitz. [Third-party notices](THIRD_PARTY_LICENSES.txt).
+[MIT](LICENSE) © Hans Schnedlitz

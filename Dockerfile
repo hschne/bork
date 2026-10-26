@@ -15,7 +15,7 @@ RUN install -Dm755 target/release/bork /artifact/bork \
 # `docker build --target artifact --output type=local,dest=dist .`
 FROM scratch AS artifact
 COPY --from=build /artifact/ /
-COPY LICENSE THIRD_PARTY_LICENSES.txt README.md /
+COPY LICENSE README.md /
 COPY assets/intermission.png /assets/intermission.png
 
 # Disposable second-distribution GUI/runtime verification, not the shipped artifact.
