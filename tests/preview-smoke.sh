@@ -23,7 +23,7 @@ click_target() {
 
 function main() {
   [[ $# == 2 ]] || { usage; exit 1; }
-  local app output scratch xvfb app_pid window mode cleanup capture ready
+  local app output scratch xvfb app_pid window mode cleanup capture ready step target
   app="$(realpath "$1")"
   output="$(realpath -m "$2")"
   [[ -x "$app" ]] || die "Missing executable: $app"
@@ -42,7 +42,7 @@ function main() {
   DISPLAY=":$(cat "$scratch/display")"
   export DISPLAY HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache" XDG_DATA_HOME="$scratch/data" XDG_RUNTIME_DIR="$scratch/runtime" LIBGL_ALWAYS_SOFTWARE=1
   unset WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
-  for mode in default tuned test-card reopened confirmation; do
+  for mode in default tuned signal-loss tear test-card reopened confirmation; do
     capture="$output/preview-$mode.png"
     ready="${capture%.png}.ready"
     rm -f -- "$ready" "${capture%.png}.capture"
@@ -61,6 +61,18 @@ function main() {
       wait_for '^intensity 40$' "$ready"
       click_target "$ready" "$window" save
       wait_for '"intensity": 40.0' "$scratch/config/bork/settings.json"
+    elif [[ "$mode" == signal-loss || "$mode" == tear ]]; then
+      click_target "$ready" "$window" timeline
+      wait_for '^timeline .* focused$' "$ready"
+      target=0
+      [[ "$mode" != tear ]] || target=0.78
+      for step in {1..500}; do
+        if awk -v target="$target" \
+          '$1 == "signal-loss" && $2 != "none" && $2 >= target { found=1 } END { exit !found }' "$ready"; then break; fi
+        xdotool key Right
+        sleep .02
+      done
+      grep -q '^signal-loss [0-9]' "$ready" || die "Timeline did not reach signal loss"
     elif [[ "$mode" == test-card ]]; then
       click_target "$ready" "$window" timeline
       wait_for '^timeline .* focused$' "$ready"
@@ -75,12 +87,13 @@ function main() {
     [[ -s "$capture" ]] || die "Screenshot missing for $mode"
     [[ ! -s "$output/preview-$mode.log" ]] || die "Preview emitted diagnostics; inspect $output/preview-$mode.log"
     if [[ "$mode" == tuned ]]; then grep -q '"intensity": 40.0' "$output/preview-$mode.json" || die "Curve point was not changed"; fi
+    if [[ "$mode" == signal-loss || "$mode" == tear ]]; then grep -q '"signal_loss": [0-9]' "$output/preview-$mode.json" || die "Signal loss was not captured"; fi
     if [[ "$mode" == test-card ]]; then grep -q '"test_card": true' "$output/preview-$mode.json" || die "Timeline did not reach the break card"; fi
     if [[ "$mode" == reopened ]]; then grep -q '"intensity": 40.0' "$output/preview-$mode.json" || die "Saved curve was not reopened"; fi
   done
   cp "$scratch/config/bork/settings.json" "$output/preview-saved-settings.json"
   "$app" --version >"$output/version.txt"
-  echo "Preview default, curve editing, timeline, save/reopen and Live Preview confirmation passed in isolated Xvfb."
+  echo "Preview default, curve editing, signal loss, tear, test card, save/reopen and Live Preview confirmation passed in isolated Xvfb."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

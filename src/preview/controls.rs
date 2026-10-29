@@ -94,6 +94,8 @@ impl Preview {
         });
         let phase = if self.playback.test_card(&self.settings) {
             "Overtime · break required".into()
+        } else if self.playback.transition(&self.settings).is_some() {
+            "Overtime · connection lost".into()
         } else if self.playback.position < 1.0 {
             "Clean desktop".into()
         } else {

@@ -186,6 +186,14 @@ impl Process {
         input.flush().unwrap();
         self.reply()
     }
+    fn card(&mut self, remaining: u64) -> String {
+        self.send(Message::Display(DisplayState::TestCard {
+            remaining,
+            total: 300,
+            appearance: bork::overtime::Overtime::default(),
+        }))
+    }
+
     fn install(&mut self, trial: bool) -> String {
         let shader = Interference::default()
             .hyprland_shader_at(Glitchiness::try_from(100.0).unwrap(), 0.0, 0)
@@ -644,6 +652,59 @@ fn reset_cancels_the_trial_clears_background_intent_and_keeps_guardian_alive() {
     .unwrap();
     request_trial(&fake.runtime(), &TrialRequest::Cancel { id: replacement }).unwrap();
     fake.wait_original();
+}
+
+#[test]
+fn signal_loss_does_not_restart_on_countdown_and_reset_cancels_it() {
+    let fake = Fake::new();
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    assert_eq!(process.card(300), "ok");
+    let first = std::fs::read_to_string(fake.runtime().join("effect.frag")).unwrap();
+    assert!(first.contains("HOLD_A"));
+    assert_eq!(process.card(299), "ok");
+    assert_eq!(
+        std::fs::read_to_string(fake.runtime().join("effect.frag")).unwrap(),
+        first
+    );
+    assert_eq!(process.send(Message::Reset), "ok");
+    fake.wait_original();
+    assert_eq!(process.card(300), "ok");
+    let second = std::fs::read_to_string(fake.runtime().join("effect.frag")).unwrap();
+    assert_ne!(
+        first, second,
+        "Each overtime entry needs a new random identity"
+    );
+    assert_eq!(process.send(Message::Display(DisplayState::Work)), "ok");
+    fake.wait_original();
+    // Waiting beyond the old animation deadline must not resurrect the card.
+    let deadline = Instant::now() + Duration::from_millis(1300);
+    while Instant::now() < deadline {
+        assert_eq!(process.send(Message::Heartbeat), "ok");
+        assert!(fake.original());
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn signal_loss_lock_eof_and_emergency_stop_restore_exact_settings() {
+    for stop in ["lock", "eof", "emergency"] {
+        let fake = Fake::new();
+        let mut process = Process::start(&fake);
+        assert_eq!(process.card(300), "ok");
+        assert!(!fake.original());
+        match stop {
+            "lock" => {
+                fake.locked.store(true, Ordering::Relaxed);
+                fake.wait_original();
+                assert_eq!(process.send(Message::Display(DisplayState::Work)), "ok");
+                fake.locked.store(false, Ordering::Relaxed);
+            }
+            "eof" => process.input.take().map(drop).unwrap(),
+            _ => recovery::stop(&fake.runtime()).unwrap(),
+        }
+        fake.wait_original();
+    }
 }
 
 #[test]

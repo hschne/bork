@@ -185,7 +185,16 @@ fn compositor_renders_cards_intercepts_input_and_restores_on_exit() {
         total: 300,
         appearance: bork::overtime::Overtime::default(),
     }));
-    owner.heartbeat_for(Duration::from_millis(250));
+    let loss = fs::read_to_string(hypr.runtime_directory().unwrap().join("effect.frag")).unwrap();
+    assert!(
+        loss.contains("HOLD_A"),
+        "Overtime skipped the final disruption"
+    );
+    owner.heartbeat_for(Duration::from_millis(350));
+    capture("signal-loss-two-outputs.png", "");
+    assert!(hypr.request("/configerrors").unwrap().trim().is_empty());
+    // No more display publications: the guardian must finish the handoff itself.
+    owner.heartbeat_for(Duration::from_millis(1200));
     let (w, h, bytes) = image(&capture("overlay-two-outputs.png", ""));
     assert_eq!((w, h), (2560, 720));
     let expected = bork::overtime::Renderer::load(&bork::overtime::Overtime::default())
@@ -216,6 +225,19 @@ fn compositor_renders_cards_intercepts_input_and_restores_on_exit() {
     for (key, value) in &before {
         assert_eq!(hypr.get(key).unwrap(), *value);
     }
+    owner.send(Message::Display(DisplayState::TestCard {
+        remaining: 271,
+        total: 300,
+        appearance: bork::overtime::Overtime::default(),
+    }));
+    assert!(
+        !hypr
+            .runtime_directory()
+            .unwrap()
+            .join("journal.json")
+            .exists(),
+        "Countdown update restarted signal loss"
+    );
     let keys = target.state.keys;
     let clicks = target.state.clicks;
     target.click();
@@ -271,6 +293,60 @@ fn compositor_renders_cards_intercepts_input_and_restores_on_exit() {
         "Pointer motion alone did not interrupt inactivity"
     );
     println!("Keyboard and pointer-only interruption verified.");
+}
+
+#[test]
+#[ignore = "requires tests/nested-session.sh; never run on the active desktop"]
+fn shader_removal_is_visible_after_unlock_without_input() {
+    isolated();
+    let hypr = Hyprland::from_env().unwrap();
+    hypr.request("/output create headless unlock-proof")
+        .unwrap();
+    configure_output(&hypr, "unlock-proof,1280x720@30,0x0,1");
+    thread::sleep(Duration::from_millis(300));
+    hypr.request("/dispatch focusmonitor unlock-proof").unwrap();
+    let mut target = support::Desktop::new();
+    thread::sleep(Duration::from_millis(300));
+    let (width, height, before) = image(&capture("unlock-before.png", "unlock-proof"));
+    assert_eq!((width, height), (1280, 720));
+    let mut owner = Guardian::start();
+    owner.send(Message::Display(DisplayState::Interference {
+        shader: Interference::default()
+            .hyprland_shader_at(Glitchiness::MAXIMUM, 0.0, 41)
+            .unwrap(),
+    }));
+    owner.heartbeat_for(Duration::from_millis(300));
+    let (_, _, affected) = image(&capture("unlock-interference.png", "unlock-proof"));
+    let changed = before
+        .chunks_exact(3)
+        .zip(affected.chunks_exact(3))
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(
+        changed > 10_000,
+        "Capture must observe the shader effect: {changed} changed pixels"
+    );
+    let session = target.lock();
+    owner.heartbeat_for(Duration::from_millis(400));
+    owner.send(Message::Display(DisplayState::Work));
+    target.unlock(session);
+    owner.heartbeat_for(Duration::from_millis(400));
+    let (_, _, after) = image(&capture("unlock-after.png", "unlock-proof"));
+    let different = before
+        .chunks_exact(3)
+        .zip(after.chunks_exact(3))
+        .enumerate()
+        // Ignore the compositor's animated cursor at the centre and warning banners.
+        .filter(|(i, (a, b))| {
+            let x = i % 1280;
+            let y = i / 1280;
+            y > 80 && !(620..680).contains(&x) && a != b
+        })
+        .count();
+    assert!(
+        different < 100,
+        "{different} pixels remained changed after unlock without input"
+    );
 }
 
 fn configure_output(hypr: &Hyprland, rule: &str) {

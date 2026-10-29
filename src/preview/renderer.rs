@@ -57,13 +57,7 @@ impl Renderer {
         }
     }
 
-    pub fn update(
-        &mut self,
-        gl: &glow::Context,
-        settings: &Interference,
-        level: Glitchiness,
-    ) -> Result<()> {
-        let body = settings.shader_body(level);
+    pub fn update(&mut self, gl: &glow::Context, body: String) -> Result<()> {
         if self.body != body {
             let program = compile(gl, &body)?;
             // SAFETY: called exclusively during a current-context paint callback.

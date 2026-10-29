@@ -3,7 +3,7 @@ use super::renderer::Renderer;
 use crate::{
     artwork,
     config::Settings,
-    effect::{self, Glitchiness},
+    effect::{self, Glitchiness, SignalLoss},
 };
 use anyhow::Result;
 use eframe::egui;
@@ -77,6 +77,7 @@ impl Scene {
         settings: &Settings,
         level: Glitchiness,
         test_card: bool,
+        transition: Option<(SignalLoss, f32)>,
     ) -> egui::Rect {
         let seconds = settings.timing.break_seconds.get();
         if seconds != self.card_seconds {
@@ -94,7 +95,6 @@ impl Scene {
         let rect =
             egui::Rect::from_center_size(outer.center(), egui::vec2(height * 16.0 / 9.0, height));
         let renderer = self.renderer.clone();
-        let interference = settings.interference.clone();
         let canvas = if test_card {
             self.card.clone()
         } else {
@@ -114,14 +114,20 @@ impl Scene {
         } else {
             level.quantized()
         };
-        let time = self.start.elapsed().as_secs_f32();
-        let seed = self.seed;
+        let (body, time) = match transition {
+            Some((loss, elapsed)) => (loss.shader_body(), elapsed),
+            None => (
+                settings.interference.shader_body(level),
+                self.start.elapsed().as_secs_f32(),
+            ),
+        };
+        let seed = if transition.is_some() { 0 } else { self.seed };
         let error = self.error.clone();
         ui.painter().add(egui::PaintCallback {
             rect: image_rect,
             callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut renderer = renderer.lock().unwrap();
-                match renderer.update(painter.gl(), &interference, level) {
+                match renderer.update(painter.gl(), body.clone()) {
                     Ok(()) => renderer.paint(painter.gl(), &canvas, time, seed),
                     Err(e) => *error.lock().unwrap() = Some(format!("{e:#}")),
                 }

@@ -1,6 +1,11 @@
 //! One owner for background state, trial precedence, locks, and display resources.
 use super::{DisplayState, journal, trial::TrialRequest};
-use crate::{clock::boot_time, hyprland::Hyprland, wayland::TestCards};
+use crate::{
+    clock::boot_time,
+    effect::{self, SIGNAL_LOSS_SECONDS, SignalLoss},
+    hyprland::Hyprland,
+    wayland::TestCards,
+};
 use anyhow::{Context, Result};
 use std::{
     path::{Path, PathBuf},
@@ -26,6 +31,8 @@ pub(super) struct DisplayOwner {
     trial: Option<Trial>,
     next_trial_id: u64,
     cards: Option<TestCards>,
+    transition_deadline: Option<Duration>,
+    in_overtime: bool,
     locked: bool,
     lock_checked: Instant,
 }
@@ -39,6 +46,8 @@ impl DisplayOwner {
             trial: None,
             next_trial_id: 0,
             cards: None,
+            transition_deadline: None,
+            in_overtime: false,
             locked: false,
             lock_checked: Instant::now(),
         }
@@ -74,6 +83,7 @@ impl DisplayOwner {
             TrialRequest::Cancel { id } => {
                 if self.trial.as_ref().is_some_and(|trial| trial.id == id) {
                     self.trial = None;
+                    self.transition_deadline = None;
                     self.reconcile()?;
                 }
                 return Ok(TrialDecision::Accepted(id));
@@ -116,12 +126,21 @@ impl DisplayOwner {
             .is_some_and(|trial| boot_time() >= trial.deadline)
         {
             self.trial = None;
+            self.transition_deadline = None;
+            self.reconcile()?;
+        }
+        if self
+            .transition_deadline
+            .is_some_and(|deadline| boot_time() >= deadline)
+        {
+            self.transition_deadline = None;
             self.reconcile()?;
         }
         Ok(())
     }
 
     fn reconcile(&mut self) -> Result<()> {
+        let was_locked = self.locked;
         self.locked = self.hypr.locked()?;
         if self.locked {
             self.trial = None;
@@ -135,30 +154,47 @@ impl DisplayOwner {
             DisplayState::Work => self.clear(),
             DisplayState::Interference { shader } => {
                 self.cards = None;
-                if self.path.join("journal.json").exists() {
-                    journal::update(&self.path, &self.hypr, &shader)
-                } else {
-                    journal::install(&self.path, &self.hypr, &shader)
-                }
+                self.in_overtime = false;
+                self.transition_deadline = None;
+                self.shader(&shader)
             }
             DisplayState::TestCard {
                 remaining,
                 total,
                 appearance,
             } => {
-                journal::restore(&self.path)?;
+                if !self.in_overtime && !was_locked {
+                    let shader = SignalLoss::new(effect::fresh_seed()?).hyprland_shader();
+                    self.shader(&shader)?;
+                    self.transition_deadline =
+                        Some(boot_time() + Duration::from_secs_f32(SIGNAL_LOSS_SECONDS));
+                }
+                self.in_overtime = true;
+                if self.transition_deadline.is_some() {
+                    return Ok(());
+                }
                 if let Some(cards) = self.cards.as_mut() {
-                    cards.countdown(remaining, total, &appearance)
+                    cards.countdown(remaining, total, &appearance)?;
                 } else {
                     self.cards = Some(TestCards::show(remaining, total, &appearance)?);
-                    Ok(())
                 }
+                journal::restore(&self.path)
             }
+        }
+    }
+
+    fn shader(&self, shader: &str) -> Result<()> {
+        if self.path.join("journal.json").exists() {
+            journal::update(&self.path, &self.hypr, shader)
+        } else {
+            journal::install(&self.path, &self.hypr, shader)
         }
     }
 
     fn clear(&mut self) -> Result<()> {
         self.cards = None;
+        self.transition_deadline = None;
+        self.in_overtime = false;
         journal::restore(&self.path)
     }
 

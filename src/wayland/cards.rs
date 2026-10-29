@@ -100,6 +100,22 @@ impl TestCards {
         }
         queue.roundtrip(&mut state)?;
         ensure!(!state.inputs.is_empty(), "No Wayland input seat advertised");
+        ensure!(!state.cards.is_empty(), "No Wayland outputs advertised");
+        // The guardian keeps the blackout shader installed until every card has
+        // received configure and submitted its first buffer. The outer connection
+        // deadline bounds these roundtrips even if a compositor stops replying.
+        while state.cards.iter().any(|card| card.size.is_none()) {
+            queue.roundtrip(&mut state)?;
+            if let Some(error) = state.error.take() {
+                anyhow::bail!(error);
+            }
+        }
+        // Flush and acknowledge the buffers queued by the final configure callback
+        // before the guardian removes the blackout shader.
+        queue.roundtrip(&mut state)?;
+        if let Some(error) = state.error.take() {
+            anyhow::bail!(error);
+        }
         Ok(Self {
             connection,
             queue,

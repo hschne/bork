@@ -5,8 +5,10 @@ use std::io::Read;
 
 mod curve;
 mod shader;
+mod transition;
 pub(crate) use curve::MIN_POINT_GAP;
 pub use curve::{CurvePoint, GraceCurve};
+pub use transition::{SIGNAL_LOSS_SECONDS, SignalLoss};
 
 /// One session seed, retained across tuning changes and shader recompilation.
 pub fn fresh_seed() -> Result<u32> {

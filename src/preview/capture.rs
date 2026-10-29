@@ -46,6 +46,7 @@ impl Capture {
         level: f32,
         curve: GraceCurve,
         test_card: bool,
+        signal_loss: Option<f32>,
     ) {
         if let Some(path) = self.path.as_ref() {
             if self.manual && ctx.cumulative_frame_nr() >= 2 {
@@ -69,6 +70,10 @@ impl Capture {
                 }
                 layout.push_str(&format!("intensity {}\n", curve.points()[0].intensity));
                 layout.push_str(&format!("test-card {test_card}\n"));
+                layout.push_str(&format!(
+                    "signal-loss {}\n",
+                    signal_loss.map_or_else(|| "none".into(), |seconds| format!("{seconds:.4}"))
+                ));
                 if layout != self.layout {
                     let result = std::fs::write(path.with_extension("ready.tmp"), &layout)
                         .and_then(|()| {
@@ -129,6 +134,7 @@ impl Capture {
                         path.with_extension("json"),
                         serde_json::to_vec_pretty(&serde_json::json!({
                             "level": level, "curve": curve, "test_card": test_card,
+                            "signal_loss": signal_loss,
                         }))?,
                     )?;
                     Ok(())
@@ -166,7 +172,7 @@ mod tests {
                         target(name, &ui.button(name));
                     }
                 });
-                capture.update(ctx, 0.0, GraceCurve::default(), false);
+                capture.update(ctx, 0.0, GraceCurve::default(), false, None);
             });
         }
         let ready = std::fs::read_to_string(path.with_extension("ready")).unwrap();
@@ -175,7 +181,7 @@ mod tests {
         assert!(!capture.requested);
         std::fs::write(path.with_extension("capture"), "").unwrap();
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), false);
+            capture.update(ctx, 0.0, GraceCurve::default(), false, None);
         });
         assert!(capture.requested);
         assert!(
@@ -199,11 +205,11 @@ mod tests {
         // Discard egui's initial layout/font repaint requests.
         for _ in 0..3 {
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                capture.update(ctx, 0.0, GraceCurve::default(), true)
+                capture.update(ctx, 0.0, GraceCurve::default(), true, None)
             });
         }
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true)
+            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
         });
         let viewport = &output.viewport_output[&egui::ViewportId::ROOT];
         assert!(viewport.repaint_delay > Duration::from_millis(100));
@@ -212,7 +218,7 @@ mod tests {
 
         capture.started = Instant::now() - Duration::from_secs(2);
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true)
+            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
         });
         assert!(
             output.viewport_output[&egui::ViewportId::ROOT]
@@ -222,7 +228,7 @@ mod tests {
         );
         assert!(capture.requested);
         let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true)
+            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
         });
         assert!(
             !output.viewport_output[&egui::ViewportId::ROOT]

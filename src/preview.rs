@@ -45,7 +45,7 @@ pub fn open() -> Result<()> {
             let mut preview = Preview {
                 settings,
                 path,
-                playback: Playback::default(),
+                playback: Playback::new(crate::effect::fresh_seed()?),
                 scene,
                 status: String::new(),
                 trial: None,
@@ -78,7 +78,7 @@ impl Preview {
     fn trial(&mut self) -> Result<()> {
         let hypr = Hyprland::from_env()?;
         hypr.check()?;
-        self.trial = Some(if self.playback.test_card(&self.settings) {
+        self.trial = Some(if self.playback.overtime(&self.settings) {
             DesktopTrial::start_card(
                 &hypr,
                 u64::from(self.settings.timing.break_seconds.get()),
@@ -198,6 +198,7 @@ impl eframe::App for Preview {
                         &self.settings,
                         self.playback.level(&self.settings),
                         self.playback.test_card(&self.settings),
+                        self.playback.transition(&self.settings),
                     );
                     self.image_menu(ui, rect);
                     self.transport(ui);
@@ -229,8 +230,15 @@ impl eframe::App for Preview {
         }
         let level = self.playback.level(&self.settings);
         let test_card = self.playback.test_card(&self.settings);
-        self.capture
-            .update(ctx, level.value(), self.settings.curve, test_card);
+        self.capture.update(
+            ctx,
+            level.value(),
+            self.settings.curve,
+            test_card,
+            self.playback
+                .transition(&self.settings)
+                .map(|(_, seconds)| seconds),
+        );
         if self.playback.playing
             || (!test_card && self.settings.interference.has_visible_effect_at(level))
         {
