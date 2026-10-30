@@ -11,9 +11,9 @@ A visual break reminder for [Hyprland](https://hypr.land/).
 
 Work for 20 minutes. Your desktop starts losing its signal. Three minutes later, a **TAKE A BREAK** test card covers every monitor. Five minutes without keyboard or mouse input clears it.
 
-**Demo contains flashing and distortion.**
+**Demo contains flashing and distortion.** Timings are accelerated.
 
-https://github.com/user-attachments/assets/43ab5ac1-86d1-40e2-abff-20f96fa0ec8b
+https://github.com/user-attachments/assets/099c3323-57db-40cc-a076-aedf6a6633bc
 
 ## Install
 
