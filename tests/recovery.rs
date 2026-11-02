@@ -6,7 +6,10 @@ use bork::{
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
-    os::unix::net::{UnixListener, UnixStream},
+    os::unix::{
+        fs::DirBuilderExt,
+        net::{UnixListener, UnixStream},
+    },
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
@@ -466,7 +469,7 @@ fn borrowed_trial_expiry_resumes_newer_background_shader() {
 }
 
 #[test]
-fn unlock_reinstates_latest_background_without_a_redundant_publication() {
+fn unlock_does_not_reinstate_effects_published_before_or_during_lock() {
     let fake = Fake::new();
     let mut process = Process::start(&fake);
     assert_eq!(process.install(false), "ok");
@@ -481,20 +484,17 @@ fn unlock_reinstates_latest_background_without_a_redundant_publication() {
     );
     assert!(fake.original());
     fake.locked.store(false, Ordering::Relaxed);
-    let deadline = Instant::now() + Duration::from_secs(1);
-    loop {
+    let deadline = Instant::now() + Duration::from_millis(400);
+    while Instant::now() < deadline {
         assert_eq!(process.send(Message::Heartbeat), "ok");
-        if std::fs::read_to_string(fake.runtime().join("effect.frag"))
-            .is_ok_and(|current| current == shader)
-        {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "Unlock did not reinstate the latest background"
-        );
+        assert!(fake.original(), "Unlock reinstated stale interference");
         thread::sleep(Duration::from_millis(10));
     }
+    assert_eq!(
+        process.send(Message::Display(DisplayState::Interference { shader })),
+        "ok"
+    );
+    assert!(!fake.original(), "Fresh post-unlock intent was not applied");
 }
 
 #[test]
@@ -716,4 +716,83 @@ fn reset_without_a_timer_uses_independent_guardian_recovery() {
     assert_eq!(status.state, bork::control::State::Stopped);
     fake.wait_original();
     assert!(process.child.wait().unwrap().success());
+}
+
+#[test]
+fn independent_recovery_disables_only_the_private_card_rule_lease() {
+    let fake = Fake::new();
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(fake.runtime())
+        .unwrap();
+    let key = "layerrule[bork-0123456789abcdef]:match:namespace";
+    fake.values.lock().unwrap().insert(key.into(), "1".into());
+    fake.values
+        .lock()
+        .unwrap()
+        .insert("layerrule[user-rule]:enable".into(), "1".into());
+    std::fs::write(
+        fake.runtime().join("card-rule.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "socket":fake.socket,
+            "namespace":"bork-0123456789abcdef"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    recovery::stop(&fake.runtime()).unwrap();
+    assert_eq!(fake.values.lock().unwrap()[key], "a^");
+    assert_eq!(
+        fake.values.lock().unwrap()["layerrule[user-rule]:enable"],
+        "1"
+    );
+    assert!(fake.original());
+    assert!(!fake.runtime().join("card-rule.json").exists());
+}
+
+#[test]
+fn uncertain_card_rule_recovery_retains_its_lease_for_retry() {
+    for after in [false, true] {
+        let fake = Fake::new();
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(fake.runtime())
+            .unwrap();
+        let key = "layerrule[bork-0123456789abcdef]:match:namespace";
+        fake.values.lock().unwrap().insert(key.into(), "1".into());
+        std::fs::write(
+            fake.runtime().join("card-rule.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "socket":fake.socket,"namespace":"bork-0123456789abcdef"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        *fake.failure.lock().unwrap() = Some((key.into(), after));
+        assert!(recovery::stop(&fake.runtime()).is_err());
+        assert!(fake.runtime().join("card-rule.json").exists());
+        recovery::stop(&fake.runtime()).unwrap();
+        assert_eq!(fake.values.lock().unwrap()[key], "a^");
+        assert!(!fake.runtime().join("card-rule.json").exists());
+    }
+}
+
+#[test]
+fn card_rule_recovery_cannot_name_a_user_rule() {
+    let fake = Fake::new();
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(fake.runtime())
+        .unwrap();
+    std::fs::write(
+        fake.runtime().join("card-rule.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "socket":fake.socket,"namespace":"user-rule"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(recovery::stop(&fake.runtime()).is_err());
+    assert!(fake.runtime().join("card-rule.json").exists());
+    assert!(fake.original());
 }

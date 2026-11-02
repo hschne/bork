@@ -54,7 +54,7 @@ inside() {
     [[ -f "$XDG_RUNTIME_DIR/test-status" ]] || die "External proof did not finish"
     [[ "$(cat "$XDG_RUNTIME_DIR/test-status")" == 0 ]] || die "External proof failed"
   else
-    BORK_ISOLATED=1 timeout 45 "$proof" --ignored --nocapture --test-threads=1
+    BORK_ISOLATED=1 timeout 45 "$proof" --ignored "${BORK_DISPLAY_FILTER:-}" --nocapture --test-threads=1
   fi
   if [[ "${BORK_CLEAN_PREVIEW:-}" == 1 ]]; then
     # No development-shell graphics paths: exercise the executable's discovery

@@ -78,6 +78,28 @@ fn malformed_and_stalled_requests_are_bounded_and_do_not_kill_the_server() {
 }
 
 #[test]
+fn waiting_wakes_for_each_command_without_a_tick_delay() {
+    let directory = tempfile::tempdir().unwrap();
+    let runtime = directory.path().join("runtime");
+    let server = Server::bind(&runtime).unwrap();
+    let client = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(10));
+        for command in [Command::Status, Command::Pause] {
+            crate::control::execute(&runtime, command).unwrap();
+        }
+    });
+    let started = Instant::now();
+    for command in [Command::Status, Command::Pause] {
+        server.wait(Duration::from_millis(250)).unwrap();
+        let pending = server.poll().unwrap().unwrap();
+        assert_eq!(pending.command, command);
+        pending.respond(&Ok(Status::stopped()));
+    }
+    client.join().unwrap();
+    assert!(started.elapsed() < Duration::from_millis(150));
+}
+
+#[test]
 fn a_second_owner_cannot_replace_the_control_socket() {
     let directory = tempfile::tempdir().unwrap();
     let runtime = directory.path().join("runtime");

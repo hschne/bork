@@ -51,6 +51,7 @@ struct State {
     remaining: u64,
     total: u64,
     renderer: Renderer,
+    namespace: String,
     error: Option<String>,
 }
 
@@ -66,12 +67,22 @@ pub(super) fn check() -> Result<()> {
 }
 
 impl TestCards {
-    pub fn show(remaining: u64, total: u64, appearance: &Overtime) -> Result<Self> {
+    pub(crate) fn show(
+        remaining: u64,
+        total: u64,
+        appearance: &Overtime,
+        namespace: String,
+    ) -> Result<Self> {
         let renderer = Renderer::load(appearance)?;
-        super::connect(move || Self::connect_inner(remaining, total, renderer))
+        super::connect(move || Self::connect_inner(remaining, total, renderer, namespace))
     }
 
-    fn connect_inner(remaining: u64, total: u64, renderer: Renderer) -> Result<Self> {
+    fn connect_inner(
+        remaining: u64,
+        total: u64,
+        renderer: Renderer,
+        namespace: String,
+    ) -> Result<Self> {
         let connection = Connection::connect_to_env().context("Connecting to Wayland")?;
         let (globals, mut queue) = registry_queue_init(&connection)?;
         let qh = queue.handle();
@@ -93,6 +104,7 @@ impl TestCards {
             remaining,
             total,
             renderer,
+            namespace,
             error: None,
         };
         for seat in state.seats.seats().collect::<Vec<_>>() {
@@ -120,6 +132,19 @@ impl TestCards {
             connection,
             queue,
             state,
+        })
+    }
+
+    /// Unmap while the private no-animation rule is still enabled. A compositor
+    /// IPC reply alone does not order requests on this separate Wayland connection.
+    pub(crate) fn close(mut self) -> Result<()> {
+        super::connect(move || {
+            for card in &self.state.cards {
+                card.layer.wl_surface().attach(None, 0, 0);
+                card.layer.commit();
+            }
+            self.queue.roundtrip(&mut self.state)?;
+            Ok(())
         })
     }
 
@@ -172,7 +197,7 @@ impl State {
             qh,
             surface,
             Layer::Overlay,
-            Some("bork"),
+            Some(self.namespace.as_str()),
             Some(&output),
         );
         layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);

@@ -1,4 +1,5 @@
 //! Independent display guardian and recovery entry points.
+mod card_rule;
 mod client;
 mod display;
 mod journal;
@@ -6,7 +7,6 @@ mod server;
 mod trial;
 
 pub(crate) use client::{Guardian, Stopped};
-use journal::restore;
 pub use server::run_guardian;
 pub use trial::{DesktopTrial, TrialRequest, request_trial};
 
@@ -20,6 +20,12 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+fn restore(path: &Path) -> Result<()> {
+    let shader = journal::restore(path);
+    let rule = card_rule::restore(path);
+    shader.and(rule)
+}
 
 pub(crate) fn private_directory(path: &Path) -> Result<()> {
     match fs::DirBuilder::new().mode(0o700).create(path) {

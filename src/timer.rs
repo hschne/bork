@@ -15,7 +15,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
     time::{Duration, Instant},
 };
 
@@ -90,7 +89,7 @@ pub fn run() -> Result<()> {
                 request.respond(&action);
             }
             action?;
-            thread::sleep(Duration::from_millis(250));
+            controls.wait(Duration::from_millis(250))?;
         }
         Ok(())
     })();

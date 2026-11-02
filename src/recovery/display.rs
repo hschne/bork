@@ -1,5 +1,5 @@
 //! One owner for background state, trial precedence, locks, and display resources.
-use super::{DisplayState, journal, trial::TrialRequest};
+use super::{DisplayState, card_rule, journal, trial::TrialRequest};
 use crate::{
     clock::boot_time,
     effect::{self, SIGNAL_LOSS_SECONDS, SignalLoss},
@@ -143,6 +143,9 @@ impl DisplayOwner {
         let was_locked = self.locked;
         self.locked = self.hypr.locked()?;
         if self.locked {
+            // A pre-lock publication is not evidence of post-unlock work debt.
+            // Stay clean until the timer observes unlock and publishes fresh intent.
+            self.background = DisplayState::Work;
             self.trial = None;
             return self.clear();
         }
@@ -153,7 +156,9 @@ impl DisplayOwner {
         match desired {
             DisplayState::Work => self.clear(),
             DisplayState::Interference { shader } => {
-                self.cards = None;
+                if let Some(cards) = self.cards.take() {
+                    cards.close()?;
+                }
                 self.in_overtime = false;
                 self.transition_deadline = None;
                 self.shader(&shader)
@@ -176,7 +181,8 @@ impl DisplayOwner {
                 if let Some(cards) = self.cards.as_mut() {
                     cards.countdown(remaining, total, &appearance)?;
                 } else {
-                    self.cards = Some(TestCards::show(remaining, total, &appearance)?);
+                    let namespace = card_rule::install(&self.path, &self.hypr)?;
+                    self.cards = Some(TestCards::show(remaining, total, &appearance, namespace)?);
                 }
                 journal::restore(&self.path)
             }
@@ -192,13 +198,19 @@ impl DisplayOwner {
     }
 
     fn clear(&mut self) -> Result<()> {
-        self.cards = None;
+        let cards = match self.cards.take() {
+            Some(cards) => cards.close(),
+            None => Ok(()),
+        };
         self.transition_deadline = None;
         self.in_overtime = false;
-        journal::restore(&self.path)
+        let shader = journal::restore(&self.path);
+        cards.and(shader)
     }
 
     pub(super) fn finish(mut self) -> Result<()> {
-        self.clear()
+        let display = self.clear();
+        let rule = card_rule::restore(&self.path);
+        display.and(rule)
     }
 }

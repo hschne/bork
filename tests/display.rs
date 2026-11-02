@@ -297,7 +297,7 @@ fn compositor_renders_cards_intercepts_input_and_restores_on_exit() {
 
 #[test]
 #[ignore = "requires tests/nested-session.sh; never run on the active desktop"]
-fn shader_removal_is_visible_after_unlock_without_input() {
+fn unlock_does_not_show_stale_shader_without_input() {
     isolated();
     let hypr = Hyprland::from_env().unwrap();
     hypr.request("/output create headless unlock-proof")
@@ -328,25 +328,32 @@ fn shader_removal_is_visible_after_unlock_without_input() {
     );
     let session = target.lock();
     owner.heartbeat_for(Duration::from_millis(400));
-    owner.send(Message::Display(DisplayState::Work));
+    // A publication based on an old timer snapshot must not be replayed at unlock.
+    owner.send(Message::Display(DisplayState::Interference {
+        shader: Interference::default()
+            .hyprland_shader_at(Glitchiness::MAXIMUM, 0.0, 41)
+            .unwrap(),
+    }));
     target.unlock(session);
-    owner.heartbeat_for(Duration::from_millis(400));
-    let (_, _, after) = image(&capture("unlock-after.png", "unlock-proof"));
-    let different = before
-        .chunks_exact(3)
-        .zip(after.chunks_exact(3))
-        .enumerate()
-        // Ignore the compositor's animated cursor at the centre and warning banners.
-        .filter(|(i, (a, b))| {
-            let x = i % 1280;
-            let y = i / 1280;
-            y > 80 && !(620..680).contains(&x) && a != b
-        })
-        .count();
-    assert!(
-        different < 100,
-        "{different} pixels remained changed after unlock without input"
-    );
+    for delay in [Duration::ZERO, Duration::from_millis(260)] {
+        owner.heartbeat_for(delay);
+        let (_, _, after) = image(&capture("unlock-after.png", "unlock-proof"));
+        let different = before
+            .chunks_exact(3)
+            .zip(after.chunks_exact(3))
+            .enumerate()
+            // Ignore the compositor's animated cursor at the centre and warning banners.
+            .filter(|(i, (a, b))| {
+                let x = i % 1280;
+                let y = i / 1280;
+                y > 80 && !(620..680).contains(&x) && a != b
+            })
+            .count();
+        assert!(
+            different < 100,
+            "{different} pixels remained changed after unlock without input"
+        );
+    }
 }
 
 fn configure_output(hypr: &Hyprland, rule: &str) {
@@ -365,4 +372,155 @@ fn configure_output(hypr: &Hyprland, rule: &str) {
     } else {
         hypr.set("monitor", rule).unwrap();
     }
+}
+
+#[test]
+#[ignore = "requires tests/nested-session.sh; never run on the active desktop"]
+fn overtime_handoff_and_reset_are_instant_with_compositor_animations() {
+    let runtime = isolated();
+    let hypr = Hyprland::from_env().unwrap();
+    hypr.request("/output create headless transition-proof")
+        .unwrap();
+    configure_output(&hypr, "transition-proof,1280x720@60,0x0,1");
+    let animations = if std::env::var("BORK_LUA_CONFIG").as_deref() == Ok("1") {
+        "/eval hl.config({animations={enabled=true}})"
+    } else {
+        "/keyword animations:enabled true"
+    };
+    assert_eq!(hypr.request(animations).unwrap().trim(), "ok");
+    thread::sleep(Duration::from_millis(300));
+    hypr.request("/dispatch focusmonitor transition-proof")
+        .unwrap();
+    let _target = support::Desktop::new();
+    thread::sleep(Duration::from_millis(1000));
+    let (width, _, baseline) = image(&capture("transition-before.png", "transition-proof"));
+    let offset = (100 * width + 300) * 3;
+    let background = runtime.join("solid-card.png");
+    let mut encoder = png::Encoder::new(File::create(&background).unwrap(), 1, 1);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&[40, 210, 60])
+        .unwrap();
+    let mut appearance = bork::overtime::Overtime::default();
+    appearance.background.image = background;
+    appearance.labels.clear();
+    let mut owner = Guardian::start();
+    owner.send(Message::Display(DisplayState::TestCard {
+        remaining: 300,
+        total: 300,
+        appearance,
+    }));
+    let start = Instant::now();
+    let mut saw_card = false;
+    let mut samples = 0;
+    while start.elapsed() < Duration::from_secs(3) {
+        owner.send(Message::Heartbeat);
+        let (_, _, frame) = image(&capture("transition-frame.png", "transition-proof"));
+        let pixel = &frame[offset..offset + 3];
+        if start.elapsed() >= Duration::from_millis(1200) {
+            let card = pixel == [40, 210, 60];
+            assert!(
+                card || (!saw_card && pixel == [7, 9, 8]),
+                "Desktop leaked through the handoff at {:?}: {pixel:?}",
+                start.elapsed()
+            );
+            saw_card |= card;
+            samples += 1;
+        }
+    }
+    assert!(saw_card && samples >= 10, "Did not observe the handoff");
+    owner.send(Message::Reset);
+    for _ in 0..4 {
+        let (_, _, frame) = image(&capture("transition-reset.png", "transition-proof"));
+        assert_eq!(
+            &frame[offset..offset + 3],
+            &baseline[offset..offset + 3],
+            "Overtime card faded out instead of clearing"
+        );
+    }
+    assert!(hypr.request("/configerrors").unwrap().trim().is_empty());
+    drop(owner);
+    assert!(
+        !hypr
+            .runtime_directory()
+            .unwrap()
+            .join("card-rule.json")
+            .exists()
+    );
+}
+
+#[test]
+#[ignore = "requires tests/nested-session.sh; never run on the active desktop"]
+fn waybar_status_then_pause_clears_grace_without_waiting_for_ticks() {
+    let runtime = isolated();
+    let hypr = Hyprland::from_env().unwrap();
+    hypr.request("/output create headless pause-proof").unwrap();
+    configure_output(&hypr, "pause-proof,1280x720@60,0x0,1");
+    thread::sleep(Duration::from_millis(300));
+    hypr.request("/dispatch focusmonitor pause-proof").unwrap();
+    let mut target = support::Desktop::new();
+    thread::sleep(Duration::from_millis(300));
+    let (_, _, baseline) = image(&capture("pause-before.png", "pause-proof"));
+    let original_shader = hypr.get("decoration:screen_shader").unwrap();
+    let mut settings = bork::config::Settings::default();
+    settings.timing.work_seconds = 1.try_into().unwrap();
+    settings.timing.grace_seconds = 600;
+    let config = runtime.join("pause-config");
+    bork::config::save(&config.join("bork/settings.json"), &settings).unwrap();
+    struct TimerProcess(Child);
+    impl Drop for TimerProcess {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let _timer = TimerProcess(
+        Command::new(
+            std::env::var_os("BORK_TEST_BINARY")
+                .unwrap_or_else(|| env!("CARGO_BIN_EXE_bork").into()),
+        )
+        .env("XDG_CONFIG_HOME", &config)
+        .spawn()
+        .unwrap(),
+    );
+    let path = hypr.runtime_directory().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        target.key();
+        if bork::control::execute(&path, bork::control::Command::Status)
+            .is_ok_and(|status| status.phase == Some(bork::control::Phase::Grace))
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "Timer never entered grace");
+        thread::sleep(Duration::from_millis(20));
+    }
+    for _ in 0..5 {
+        bork::control::execute(&path, bork::control::Command::Resume).unwrap();
+        let started = Instant::now();
+        bork::control::execute(&path, bork::control::Command::Status).unwrap();
+        let status = bork::control::execute(&path, bork::control::Command::Pause).unwrap();
+        let elapsed = started.elapsed();
+        println!("Waybar status → pause: {elapsed:?}");
+        assert_eq!(status.state, bork::control::State::Paused);
+        assert!(
+            elapsed < Duration::from_millis(150),
+            "Pause waited for timer ticks: {elapsed:?}"
+        );
+        assert_eq!(
+            hypr.get("decoration:screen_shader").unwrap(),
+            original_shader
+        );
+    }
+    let (_, _, after) = image(&capture("pause-after.png", "pause-proof"));
+    let different = baseline
+        .chunks_exact(3)
+        .zip(after.chunks_exact(3))
+        .enumerate()
+        .filter(|(i, (a, b))| i / 1280 > 80 && !(620..680).contains(&(i % 1280)) && a != b)
+        .count();
+    assert!(different < 100, "Pause left {different} affected pixels");
 }

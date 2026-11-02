@@ -2,6 +2,7 @@
 use crate::control::{Command, Reply, Status};
 use anyhow::{Context, Result, ensure};
 use fs2::FileExt;
+use rustix::event::{PollFd, PollFlags, poll};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -55,6 +56,15 @@ impl Server {
             path,
             _lock: lock,
         })
+    }
+
+    /// Sleep only until a command arrives; status requests must not postpone pause.
+    pub fn wait(&self, timeout: Duration) -> Result<()> {
+        let mut fds = [PollFd::new(&self.listener, PollFlags::IN)];
+        match poll(&mut fds, Some(&timeout.try_into()?)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn poll(&self) -> Result<Option<Pending>> {

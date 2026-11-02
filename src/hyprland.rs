@@ -144,6 +144,41 @@ impl Hyprland {
         Ok(())
     }
 
+    /// A guardian-created rule owns a unique name and matches only its own surfaces.
+    pub(crate) fn card_rule(&self, namespace: &str, enabled: bool) -> Result<()> {
+        ensure!(
+            namespace.strip_prefix("bork-").is_some_and(|suffix| {
+                suffix.len() == 16 && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+            }),
+            "Invalid card rule namespace"
+        );
+        // Withdraw the matcher instead of toggling `enable`: Hyprland 0.56.2's
+        // legacy named-layer-rule parser inverts that flag (the Lua parser does not).
+        let key = format!("layerrule[{namespace}]:match:namespace");
+        let response = self.request(&format!("/keyword {key} a^"))?;
+        if response.starts_with("keyword can't work with non-legacy parsers") {
+            let name = serde_json::to_string(namespace)?;
+            let pattern = serde_json::to_string(&format!("^{namespace}$"))?;
+            let response = self.request(&format!(
+                "/eval hl.layer_rule({{name={name},match={{namespace={pattern}}},no_anim=true,enabled={enabled}}})"
+            ))?;
+            ensure!(response.trim() == "ok", "Card rule failed: {response}");
+            return Ok(());
+        }
+        ensure!(response.trim() == "ok", "Card rule failed: {response}");
+        if enabled {
+            for (field, value) in [
+                ("no_anim", "true".into()),
+                ("match:namespace", format!("^{namespace}$")),
+            ] {
+                let response =
+                    self.request(&format!("/keyword layerrule[{namespace}]:{field} {value}"))?;
+                ensure!(response.trim() == "ok", "Card rule failed: {response}");
+            }
+        }
+        Ok(())
+    }
+
     pub fn check(&self) -> Result<Value> {
         let version = self.json("version")?;
         // These exact option names are the integration contract for the researched 0.56.2 target.
