@@ -116,7 +116,10 @@ impl Hyprland {
             "Invalid IPC value"
         );
         let mut response = self.request(&format!("/keyword {key} {value}"))?;
-        if response.starts_with("keyword can't work with non-legacy parsers") {
+        if response.starts_with("keyword can't work with non-legacy parsers")
+            || response.trim() == "unknown request"
+        {
+            // Hyprland 0.57 removed keyword entirely; older Lua parsers explicitly refuse it.
             // A definite refusal is safe to adapt; ambiguous transport failures are
             // never resent. This uses the compositor's built-in Lua config API,
             // not an external interpreter or plugin.
@@ -156,7 +159,9 @@ impl Hyprland {
         // legacy named-layer-rule parser inverts that flag (the Lua parser does not).
         let key = format!("layerrule[{namespace}]:match:namespace");
         let response = self.request(&format!("/keyword {key} a^"))?;
-        if response.starts_with("keyword can't work with non-legacy parsers") {
+        if response.starts_with("keyword can't work with non-legacy parsers")
+            || response.trim() == "unknown request"
+        {
             let name = serde_json::to_string(namespace)?;
             let pattern = serde_json::to_string(&format!("^{namespace}$"))?;
             let response = self.request(&format!(

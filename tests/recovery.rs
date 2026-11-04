@@ -36,6 +36,10 @@ struct Fake {
 
 impl Fake {
     fn new() -> Self {
+        Self::with_lua_parser(false)
+    }
+
+    fn with_lua_parser(lua: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("hypr.sock");
         let listener = UnixListener::bind(&socket).unwrap();
@@ -81,6 +85,28 @@ impl Fake {
                     } else {
                         serde_json::json!({"int": value.parse::<i64>().unwrap()}).to_string()
                     }
+                } else if lua && request.starts_with("/keyword ") {
+                    // Hyprland 0.57 no longer registers the keyword IPC command.
+                    "unknown request".into()
+                } else if lua && request.starts_with("/eval hl.config(") {
+                    let setting = request
+                        .strip_prefix("/eval hl.config({[")
+                        .unwrap()
+                        .strip_suffix("})")
+                        .unwrap();
+                    let (key, literal) = setting.split_once("]=").unwrap();
+                    let key = serde_json::from_str::<String>(key)
+                        .unwrap()
+                        .replace('.', ":");
+                    let literal: serde_json::Value = serde_json::from_str(literal).unwrap();
+                    let value = match literal {
+                        serde_json::Value::String(s) => s,
+                        serde_json::Value::Bool(b) => if b { "1" } else { "0" }.into(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        _ => panic!("Unexpected Lua literal"),
+                    };
+                    v.lock().unwrap().insert(key, value);
+                    "ok".into()
                 } else if let Some(setting) = request.strip_prefix("/keyword ") {
                     let (key, value) = setting.split_once(' ').unwrap();
                     let fault = {
@@ -216,6 +242,20 @@ impl Drop for Process {
         self.input.take();
         let _ = self.child.wait();
     }
+}
+
+#[test]
+fn removed_keyword_command_uses_lua_without_killing_guardian() {
+    let fake = Fake::with_lua_parser(true);
+    let mut process = Process::start(&fake);
+    assert_eq!(process.install(false), "ok");
+    assert!(!fake.original());
+    // Subsequent grace-period publications must update the shader, not exit the guardian.
+    assert_eq!(process.install(false), "ok");
+    assert_eq!(process.send(Message::Heartbeat), "ok");
+    assert_eq!(process.send(Message::Reset), "ok");
+    fake.wait_original();
+    assert_eq!(process.send(Message::Heartbeat), "ok");
 }
 
 #[test]
