@@ -13,7 +13,7 @@ Work for 20 minutes. Your desktop starts losing its signal. Three minutes later,
 
 **Demo contains flashing and distortion.** Timings are accelerated.
 
-https://github.com/user-attachments/assets/099c3323-57db-40cc-a076-aedf6a6633bc
+[Watch the demo (MP4, 25 seconds, 9.5 MB)](https://github.com/hschne/hschne/releases/download/bork-demo/bork-readme-720p.mp4)
 
 ## Install
 
