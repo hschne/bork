@@ -11,7 +11,6 @@ pub use server::run_guardian;
 pub use trial::{DesktopTrial, TrialRequest, request_trial};
 
 use anyhow::{Context, Result, ensure};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -52,7 +51,7 @@ fn lock(path: &Path) -> Result<File> {
         .read(true)
         .write(true)
         .open(path.join("owner.lock"))?;
-    file.try_lock_exclusive()
+    file.try_lock()
         .context("Bork display owner is already running")?;
     Ok(file)
 }

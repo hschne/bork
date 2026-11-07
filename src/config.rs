@@ -118,6 +118,10 @@ pub fn list(path: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
     // Preserve serde's short f32 representation instead of widening it to f64.
     let values = serde_json::from_slice(&serde_json::to_vec(&load(path)?)?)?;
     flatten("", values, &mut result);
+    // The file omits an unset image; CLI queries still expose the known optional key.
+    result
+        .entry("overtime.background.image".to_owned())
+        .or_insert(serde_json::Value::Null);
     Ok(result)
 }
 
@@ -130,7 +134,16 @@ pub fn get(path: &Path, key: &str) -> Result<serde_json::Value> {
 
 /// Set a leaf value, or restore its default with `None`, before atomic saving.
 pub fn update(path: &Path, key: &str, value: Option<serde_json::Value>) -> Result<()> {
-    let mut settings = serde_json::to_value(load(path)?)?;
+    let mut settings = load(path)?;
+    // This optional leaf is absent from serialized defaults, unlike ordinary keys.
+    if key == "overtime.background.image" {
+        settings.overtime.background.image = value
+            .map(serde_json::from_value::<PathBuf>)
+            .transpose()
+            .with_context(|| format!("Invalid value for config key: {key}"))?;
+        return save(path, &settings);
+    }
+    let mut settings = serde_json::to_value(settings)?;
     let mut default = serde_json::to_value(Settings::default())?;
     let mut target = &mut settings;
     let mut fallback = &mut default;
@@ -231,6 +244,41 @@ mod tests {
         assert_eq!(values["tears.enabled"], false);
         assert_eq!(values["curve"], curve);
         assert_eq!(values["preview_image"], "/tmp/desktop.png");
+    }
+
+    #[test]
+    fn optional_overtime_image_can_be_set_replaced_and_unset() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("settings.json");
+        let key = "overtime.background.image";
+        assert_eq!(get(&path, key).unwrap(), serde_json::Value::Null);
+        assert!(!path.exists());
+        for image in ["/tmp/first image.png", "/tmp/second.png"] {
+            update(&path, key, Some(image.into())).unwrap();
+            assert_eq!(get(&path, key).unwrap(), image);
+            assert_eq!(
+                load(&path).unwrap().overtime.background.image,
+                Some(image.into())
+            );
+        }
+        update(&path, "timing.work_seconds", Some(900.into())).unwrap();
+        let original = fs::read(&path).unwrap();
+        for invalid in [serde_json::Value::Null, 42.into(), serde_json::json!({})] {
+            assert!(update(&path, key, Some(invalid)).is_err());
+            assert_eq!(fs::read(&path).unwrap(), original);
+        }
+        for _ in 0..2 {
+            update(&path, key, None).unwrap();
+            assert_eq!(get(&path, key).unwrap(), serde_json::Value::Null);
+            let settings = load(&path).unwrap();
+            assert_eq!(settings.overtime.background.image, None);
+            assert_eq!(settings.timing.work_seconds.get(), 900);
+            let saved: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert!(saved["overtime"]["background"].get("image").is_none());
+        }
+        update(&path, key, Some("/tmp/third.png".into())).unwrap();
+        assert_eq!(get(&path, key).unwrap(), "/tmp/third.png");
     }
 
     #[test]

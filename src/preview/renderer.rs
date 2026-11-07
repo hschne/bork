@@ -57,9 +57,9 @@ impl Renderer {
         }
     }
 
-    pub fn update(&mut self, gl: &glow::Context, body: String) -> Result<()> {
+    pub fn update(&mut self, gl: &glow::Context, body: &str) -> Result<()> {
         if self.body != body {
-            let program = compile(gl, &body)?;
+            let program = compile(gl, body)?;
             // SAFETY: called exclusively during a current-context paint callback.
             unsafe {
                 gl.delete_program(self.program);
@@ -68,7 +68,7 @@ impl Renderer {
                 self.seed_uniform = gl.get_uniform_location(program, "run_seed");
             }
             self.program = program;
-            self.body = body;
+            self.body = body.to_owned();
         }
         Ok(())
     }

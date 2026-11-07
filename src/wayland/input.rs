@@ -44,9 +44,6 @@ struct State {
 }
 
 impl InputMonitor {
-    pub fn connect() -> Result<Self> {
-        super::connect(Self::connect_inner)
-    }
     pub(super) fn connect_inner() -> Result<Self> {
         let connection = Connection::connect_to_env().context("Connecting to Wayland")?;
         let (globals, mut queue) = registry_queue_init(&connection)?;

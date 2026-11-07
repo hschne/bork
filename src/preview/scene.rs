@@ -127,7 +127,7 @@ impl Scene {
             rect: image_rect,
             callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |_info, painter| {
                 let mut renderer = renderer.lock().unwrap();
-                match renderer.update(painter.gl(), body.clone()) {
+                match renderer.update(painter.gl(), &body) {
                     Ok(()) => renderer.paint(painter.gl(), &canvas, time, seed),
                     Err(e) => *error.lock().unwrap() = Some(format!("{e:#}")),
                 }

@@ -86,11 +86,6 @@ impl Renderer {
         Ok(canvas)
     }
 
-    pub fn render(&self, width: u32, height: u32, remaining: u64, total: u64) -> Result<Canvas> {
-        let background = self.background(width, height)?;
-        Ok(self.paint(&background, remaining, total))
-    }
-
     /// Backgrounds are prepared once per output; countdown ticks only copy and paint labels.
     pub fn paint(&self, background: &RgbaImage, remaining: u64, total: u64) -> Canvas {
         let mut image = background.clone();

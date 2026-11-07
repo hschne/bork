@@ -117,18 +117,13 @@ impl Capture {
             });
             if let Some(image) = image {
                 let result = (|| -> Result<()> {
-                    let path = path.clone();
-                    let file = std::fs::File::create(&path)?;
-                    let mut encoder =
-                        png::Encoder::new(file, image.width() as u32, image.height() as u32);
-                    encoder.set_color(png::ColorType::Rgba);
-                    encoder.set_depth(png::BitDepth::Eight);
-                    encoder.write_header()?.write_image_data(
-                        &image
-                            .pixels
-                            .iter()
-                            .flat_map(|p| p.to_array())
-                            .collect::<Vec<_>>(),
+                    image::save_buffer_with_format(
+                        path,
+                        image.as_raw(),
+                        image.width() as u32,
+                        image.height() as u32,
+                        image::ColorType::Rgba8,
+                        image::ImageFormat::Png,
                     )?;
                     std::fs::write(
                         path.with_extension("json"),
@@ -189,6 +184,49 @@ mod tests {
                 .commands
                 .iter()
                 .any(|command| matches!(command, egui::ViewportCommand::Screenshot(_)))
+        );
+    }
+
+    #[test]
+    fn screenshot_event_writes_rgba_png_and_metadata_then_closes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preview.png");
+        let ctx = egui::Context::default();
+        let mut capture = Capture {
+            path: Some(path.clone()),
+            started: Instant::now(),
+            requested: true,
+            manual: false,
+            layout: String::new(),
+        };
+        let pixels = [255, 0, 0, 255, 0, 128, 255, 255];
+        let input = egui::RawInput {
+            events: vec![egui::Event::Screenshot {
+                viewport_id: egui::ViewportId::ROOT,
+                user_data: egui::UserData::default(),
+                image: std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied(
+                    [2, 1],
+                    &pixels,
+                )),
+            }],
+            ..Default::default()
+        };
+        let output = ctx.run(input, |ctx| {
+            capture.update(ctx, 35.0, GraceCurve::default(), false, Some(0.25));
+        });
+        let image = image::open(&path).unwrap().into_rgba8();
+        assert_eq!(image.dimensions(), (2, 1));
+        assert_eq!(image.as_raw(), &pixels);
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
+        assert_eq!(metadata["level"], 35.0);
+        assert_eq!(metadata["test_card"], false);
+        assert_eq!(metadata["signal_loss"], 0.25);
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT]
+                .commands
+                .iter()
+                .any(|command| matches!(command, egui::ViewportCommand::Close))
         );
     }
 

@@ -248,7 +248,7 @@ impl State {
             width as i32 * 4,
             wl_shm::Format::Argb8888,
         )?;
-        image.write_argb_scaled(width as usize, height as usize, canvas);
+        image.write_argb(canvas);
         card.layer.wl_surface().set_buffer_scale(card.scale);
         card.layer
             .wl_surface()

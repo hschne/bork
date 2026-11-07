@@ -1,7 +1,6 @@
 //! Bounded request transport, owned and polled by the background timer.
 use crate::control::{Command, Reply, Status};
 use anyhow::{Context, Result, ensure};
-use fs2::FileExt;
 use rustix::event::{PollFd, PollFlags, poll};
 use std::{
     fs::{self, File, OpenOptions},
@@ -41,7 +40,7 @@ impl Server {
             .read(true)
             .write(true)
             .open(runtime.join("timer.lock"))?;
-        lock.try_lock_exclusive()
+        lock.try_lock()
             .context("Bork background timer is already running")?;
         let path = runtime.join("timer.sock");
         match fs::remove_file(&path) {

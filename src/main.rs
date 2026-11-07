@@ -54,9 +54,9 @@ enum ConfigAction {
         #[arg(long)]
         json: bool,
     },
-    /// Print the effective value of one scalar setting.
+    /// Print the effective value of one leaf setting.
     Get { key: String },
-    /// Validate and atomically save a scalar setting (JSON number or boolean).
+    /// Validate and atomically save a leaf setting as a JSON value.
     Set { key: String, value: String },
     /// Restore one setting to its default, leaving other values unchanged.
     Unset { key: String },

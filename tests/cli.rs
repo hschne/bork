@@ -28,6 +28,36 @@ fn config_dispatch_preserves_streams_and_exit_status_without_graphics() {
     assert!(!invalid.status.success());
     assert!(invalid.stdout.is_empty());
     assert!(!invalid.stderr.is_empty());
+
+    let key = "overtime.background.image";
+    for (args, expected) in [
+        (vec!["get", key], b"null\n".as_slice()),
+        (
+            vec!["set", key, r#""/tmp/custom background.png""#],
+            b"".as_slice(),
+        ),
+        (
+            vec!["get", key],
+            b"\"/tmp/custom background.png\"\n".as_slice(),
+        ),
+        (vec!["unset", key], b"".as_slice()),
+        (vec!["get", key], b"null\n".as_slice()),
+    ] {
+        let output = run(&args);
+        assert!(
+            output.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stdout, expected);
+        assert!(output.stderr.is_empty());
+    }
+    let settings: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("bork/settings.json")).unwrap())
+            .unwrap();
+    assert!(settings["overtime"]["background"].get("image").is_none());
+    assert_eq!(settings["timing"]["break_seconds"], 240);
 }
 
 #[test]

@@ -1,10 +1,6 @@
 use super::*;
 
 impl Timer {
-    fn set_timing(&mut self, timing: Timing) {
-        self.timing = timing;
-    }
-
     fn advance(&mut self, now: u64, curve: GraceCurve) -> DesiredPhase {
         self.snapshot(now, curve).display_phase()
     }
@@ -308,7 +304,7 @@ fn configurable_durations_drive_boundaries_breaks_and_suspend() {
     let timing =
         serde_json::from_str(r#"{"work_seconds":60,"grace_seconds":10,"break_seconds":210}"#)
             .unwrap();
-    cycle.set_timing(timing);
+    cycle.timing = timing;
     assert_eq!(cycle.snapshot(59, curve).phase_remaining, 11);
     assert_eq!(
         cycle.advance(60, curve),
@@ -338,10 +334,9 @@ fn zero_grace_goes_directly_to_the_card_and_retuning_keeps_debt() {
     let mut cycle = Timer::new(0);
     let curve = GraceCurve::default();
     assert_eq!(cycle.snapshot(100, curve).worked, 100);
-    cycle.set_timing(
+    cycle.timing =
         serde_json::from_str(r#"{"work_seconds":100,"grace_seconds":0,"break_seconds":30}"#)
-            .unwrap(),
-    );
+            .unwrap();
     assert_eq!(
         cycle.advance(100, curve),
         DesiredPhase::TestCard { remaining: 30 }
