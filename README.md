@@ -10,7 +10,7 @@ Take a break. Or get borked.
 
 There's always more to do. Sometimes it's hard to take a breather - even though you know you should. It's a lot easier if your device starts to... gently remind you to do so.
 
-[Here's what that looks like.](https://github.com/hschne/hschne/releases/download/bork-demo/bork-readme-720p.mp4)
+https://github.com/user-attachments/assets/b0b9b12f-b456-47ea-9d5c-ac37c8b34649
 
 ## Install
 
@@ -31,6 +31,7 @@ Installs to `~/.local/bin/bork` and verifies the download checksum. Keep `~/.loc
 ## Usage
 
 ```sh
+bork            # Run the background timer (or configure autostart below)
 bork preview    # Preview effects and configure timing
 bork pause      # Clear effects and pause the timer
 bork resume     # Continue
@@ -39,7 +40,7 @@ bork reset      # Clear effects and start a fresh interval; also recover after a
 
 ## Configuration
 
-Run `bork preview` to edit timings and intensity of effects, and preview the results.
+Run `bork preview` to edit timings and intensity of effects, and preview the results. The timer defaults to 20 minutes of work, 3 minutes of escalating interference, and a 5-minute break without input. Shorter pauses retain work debt; a completed break starts a fresh interval when you return.
 
 ![Bork preview UI with timing controls, an interference curve, and a desktop effect preview](assets/preview-ui.png)
 
@@ -52,7 +53,7 @@ bork config set timing.work_seconds 1500
 
 ### Overtime Card
 
-The default background is embedded in the executable. Set `background.image` to use your own image or change rendered text, font or position.
+The default background is embedded in the executable. Set `overtime.background.image` to use your own image. The `overtime` settings also control text, font, and position.
 
 <details>
 <summary>Show Example</summary>
@@ -92,7 +93,7 @@ Inside your `hyprland.start` add one of:
 
 ```lua
 -- With UWSM
-hl.exec_cmd("uwsm-app -- ~/.local/bin/bork") 
+hl.exec_cmd("uwsm-app -- ~/.local/bin/bork")
 -- Without UWSM
 hl.exec_cmd("~/.local/bin/bork")
 ```
