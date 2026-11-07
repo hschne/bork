@@ -47,7 +47,11 @@ impl Default for Overtime {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Background {
-    pub image: PathBuf,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "override_value"
+    )]
+    pub image: Option<PathBuf>,
     pub fit: Fit,
     pub color: Color,
 }
@@ -55,24 +59,11 @@ pub struct Background {
 impl Default for Background {
     fn default() -> Self {
         Self {
-            image: default_image(),
+            image: None,
             fit: Fit::Cover,
             color: Color([24, 24, 24, 255]),
         }
     }
-}
-
-pub fn default_image() -> PathBuf {
-    let directory = if cfg!(debug_assertions) {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    } else {
-        std::env::current_exe()
-            .expect("Executable path is available")
-            .parent()
-            .expect("Executable has a parent directory")
-            .to_owned()
-    };
-    directory.join("assets/overtime.png")
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

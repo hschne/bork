@@ -28,10 +28,6 @@ tempfile = "3"
 object = { version = "0.37.3", default-features = false, features = ["read_core", "elf", "std"] }
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 
-[dev-dependencies]
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-wayland-protocols-misc = { version = "0.3", features = ["client"] }
-
 [profile.release]
 lto = "fat"
 strip = true

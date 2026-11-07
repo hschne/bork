@@ -13,7 +13,12 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn load(settings: &Overtime) -> Result<Self> {
-        let background = crate::artwork::load_image(&settings.background.image)?;
+        let background = match &settings.background.image {
+            Some(path) => crate::artwork::load_image(path)?,
+            None => image::load_from_memory(include_bytes!("../../assets/overtime.png"))
+                .context("Decoding embedded overtime background")?
+                .to_rgba8(),
+        };
         let mut database = fontdb::Database::new();
         database.load_system_fonts();
         let fonts = settings.labels.iter().map(|label| {
@@ -273,10 +278,25 @@ mod tests {
     fn missing_images_are_not_generated_or_installed() {
         let directory = tempfile::tempdir().unwrap();
         let mut settings = Overtime::default();
-        settings.background.image = directory.path().join("overtime.png");
+        let path = directory.path().join("overtime.png");
+        settings.background.image = Some(path.clone());
         assert!(Renderer::load(&settings).is_err());
-        assert!(!settings.background.image.exists());
+        assert!(!path.exists());
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn custom_background_overrides_the_embedded_image() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("custom.png");
+        RgbaImage::from_pixel(8, 8, Rgba([255, 0, 0, 255]))
+            .save(&path)
+            .unwrap();
+        let mut settings = Overtime::default();
+        settings.background.image = Some(path);
+        let renderer = Renderer::load(&settings).unwrap();
+        assert_eq!(renderer.background.dimensions(), (8, 8));
+        assert_eq!(*renderer.background.get_pixel(0, 0), Rgba([255, 0, 0, 255]));
     }
 
     #[test]

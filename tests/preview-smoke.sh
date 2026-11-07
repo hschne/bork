@@ -30,6 +30,10 @@ function main() {
   for tool in Xvfb xdotool timeout; do command -v "$tool" >/dev/null || die "$tool is required"; done
   mkdir -p "$output"
   scratch="$(mktemp -d)"
+  # Exercise a standalone install with no adjacent assets or source-tree cwd.
+  cp "$app" "$scratch/bork"
+  app="$scratch/bork"
+  cd "$scratch"
   Xvfb -displayfd 3 -screen 0 1280x1000x24 -nolisten tcp 3>"$scratch/display" >"$output/xvfb.log" 2>&1 &
   xvfb=$!
   printf -v cleanup 'kill %q 2>/dev/null || true; rm -rf -- %q' "$xvfb" "$scratch"
@@ -51,7 +55,8 @@ function main() {
     printf -v cleanup 'kill %q %q 2>/dev/null || true; rm -rf -- %q' "$app_pid" "$xvfb" "$scratch"
     # shellcheck disable=SC2064
     trap "$cleanup" EXIT
-    window="$(timeout 10 xdotool search --sync --onlyvisible --name 'Bork')"
+    window="$(timeout 10 xdotool search --sync --onlyvisible --name 'Bork')" \
+      || die "Preview $mode did not open; see $output/preview-$mode.log"
     xdotool windowfocus --sync "$window"
     wait_for '^curve-start ' "$ready"
     if [[ "$mode" == tuned ]]; then

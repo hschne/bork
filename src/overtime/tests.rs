@@ -76,8 +76,21 @@ fn color_and_position_values_round_trip_without_null_sentinels() {
 }
 
 #[test]
-fn default_background_points_to_the_shipped_asset() {
-    let image = default_image();
-    assert!(image.ends_with("assets/overtime.png"));
-    assert!(image.is_file());
+fn default_background_is_embedded_and_custom_paths_round_trip() {
+    let background = Background::default();
+    assert_eq!(background.image, None);
+    let encoded = serde_json::to_value(&background).unwrap();
+    assert!(encoded.get("image").is_none());
+    assert_eq!(
+        serde_json::from_value::<Background>(encoded).unwrap(),
+        background
+    );
+
+    let custom = serde_json::json!({"image": "/tmp/custom.png"});
+    let background: Background = serde_json::from_value(custom).unwrap();
+    assert_eq!(background.image, Some(PathBuf::from("/tmp/custom.png")));
+    assert_eq!(
+        serde_json::to_value(background).unwrap()["image"],
+        "/tmp/custom.png"
+    );
 }

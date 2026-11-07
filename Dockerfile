@@ -9,26 +9,20 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY assets ./assets
 RUN cargo build --release --locked
-RUN install -Dm755 target/release/bork /artifact/bork \
-    && install -Dm644 assets/overtime.png /artifact/assets/overtime.png
+RUN install -Dm755 target/release/bork /artifact/bork
 
 # `docker build --target artifact --output type=local,dest=dist .`
 FROM scratch AS artifact
 COPY --from=build /artifact/ /
-COPY LICENSE README.md /
-COPY assets/intermission.png /assets/intermission.png
+COPY install.sh /
 
-# Disposable second-distribution GUI/runtime verification, not the shipped artifact.
+# CI checks and isolated preview verification of the release executable.
 FROM build AS verify
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libwayland-client0 libwayland-cursor0 libxkbcommon0 libxkbcommon-x11-0 libegl1 libgl1 libgl1-mesa-dri \
-    libx11-6 libxcursor1 libxi6 libxrandr2 fonts-dejavu-core xvfb xauth xdotool grim \
+    libx11-6 libxcursor1 libxi6 libxrandr2 fonts-dejavu-core xvfb xauth xdotool \
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add clippy rustfmt
 COPY tests ./tests
-RUN cargo test --locked --test display --no-run --message-format=json > /tmp/display-build.json \
-    && executable="$(sed -n '/"name":"display"/s/.*"executable":"\([^"]*\)".*/\1/p' /tmp/display-build.json)" \
-    && test -n "$executable" && cp "$executable" /artifact/display-test \
-    && rm /tmp/display-build.json
 ENV LIBGL_ALWAYS_SOFTWARE=1
 CMD ["/artifact/bork", "--version"]

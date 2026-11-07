@@ -17,13 +17,15 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
+            arch: x86_64
           - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
+            arch: aarch64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Test installer
+        run: bash tests/install.sh
       - name: Build verification environment
         run: docker build --target verify -t bork-verify:ci .
       - name: Check
@@ -34,29 +36,29 @@ jobs:
           cargo test --locked'
       - name: Test preview
         run: >-
-          docker run --rm --network none --read-only --tmpfs /tmp --tmpfs /run
+          docker run --rm --network none --read-only --tmpfs /tmp:exec --tmpfs /run
           bork-verify:ci bash /build/tests/preview-smoke.sh
           /artifact/bork /tmp/preview
       - name: Build distribution
         run: docker build --target artifact --output type=local,dest=dist .
       - name: Package
         env:
-          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
         run: |
           version="$(./dist/bork --version | awk '{print $2}')"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             test "$GITHUB_REF_NAME" = "v$version"
           fi
-          archive="bork-${version}-${TARGET}.tar.gz"
+          binary="bork-linux-${ARCH}"
           mkdir -p "$RUNNER_TEMP/packages"
-          tar -C dist -czf "$RUNNER_TEMP/packages/$archive" \
-            bork LICENSE README.md assets
+          install -m755 dist/bork "$RUNNER_TEMP/packages/$binary"
+          cp dist/install.sh "$RUNNER_TEMP/packages/install.sh"
           cd "$RUNNER_TEMP/packages"
-          sha256sum "$archive" > "$archive.sha256"
+          sha256sum "$binary" > "$binary.sha256"
       - name: Upload build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: bork-${{ matrix.target }}
+          name: bork-linux-${{ matrix.arch }}
           path: ${{ runner.temp }}/packages/*
           if-no-files-found: error
 
@@ -76,6 +78,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256
+          gh release create "$GITHUB_REF_NAME" dist/bork-linux-* dist/install.sh
           --repo "$GITHUB_REPOSITORY" --verify-tag
           --title "$GITHUB_REF_NAME" --generate-notes

@@ -8,7 +8,7 @@
 
 - Use `mise.toml` for toolchain and tasks. Run `mise run check` for Rust changes and `mise run release` for distribution changes; native Nix builds do not verify the shipped executable.
 - For graphics development on NixOS, use `nix develop path:./nix`; using the repository root copies build outputs into the Nix store.
-- Run relevant display tests in isolated sessions, not the full display matrix unless requested. Active-desktop effects and persistent system configuration changes require approval.
+- Keep regression tests runnable in CI; do not add ignored or manual-only tests. Run graphics tests in isolated sessions. Active-desktop effects and persistent system configuration changes require approval.
 - Put temporary logs, captures, and test sessions in the system temporary directory; reserve `dist/` for deployable outputs.
 
 ## Invariants
