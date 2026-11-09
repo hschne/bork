@@ -8,20 +8,25 @@ Take a break. Or get borked.
 
 </div>
 
-There's always more to do. Sometimes it's hard to take a breather - even though you know you should. It's a lot easier if your device starts to... gently remind you to do so.
+https://github.com/user-attachments/assets/0c58f84e-79a4-41f1-9229-b7898336f853
 
-https://github.com/user-attachments/assets/b0b9b12f-b456-47ea-9d5c-ac37c8b34649
+## What's this? 
+
+Bork is a special kind of Pomodoro timer. 
+ 
+After twenty minutes, your display will start to glitch out. Interference gets worse if you ignore it, until finally, transmission stops altogether. Your device is now borked. Time to grab a coffee. 
+
+Realized with display shaders, inspired by [Black Hole Mac](https://blackholemac.space/). Effects are purely visual, your machine won't be harmed. 
 
 ## Install
 
 Download from [GitHub Releases](https://github.com/hschne/bork/releases):
 
 ```sh
+# Installs to ~/.local/bin/bork
 curl -fsSL https://github.com/hschne/bork/releases/latest/download/install.sh | sh
 bork preview
 ```
-
-Installs to `~/.local/bin/bork` and verifies the download checksum. Keep `~/.local/bin` on your `PATH`.
 
 ### Requirements
 
