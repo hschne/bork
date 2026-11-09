@@ -259,8 +259,8 @@ mod tests {
                             },
                         });
                     }
-                    let _ = ctx.run(input, |ctx| {
-                        egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = ctx.run_ui(input, |ui| {
+                        egui::CentralPanel::default().show(ui, |ui| {
                             edited = show(ui, curve, None, 60).unwrap();
                         });
                     });

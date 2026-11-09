@@ -161,13 +161,13 @@ mod tests {
             layout: String::new(),
         };
         for _ in 0..4 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     for name in ["curve-start", "save", "timeline", "live-preview"] {
                         target(name, &ui.button(name));
                     }
                 });
-                capture.update(ctx, 0.0, GraceCurve::default(), false, None);
+                capture.update(ui.ctx(), 0.0, GraceCurve::default(), false, None);
             });
         }
         let ready = std::fs::read_to_string(path.with_extension("ready")).unwrap();
@@ -175,8 +175,8 @@ mod tests {
         assert!(ready.contains("intensity 35\n"));
         assert!(!capture.requested);
         std::fs::write(path.with_extension("capture"), "").unwrap();
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), false, None);
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), false, None);
         });
         assert!(capture.requested);
         assert!(
@@ -211,8 +211,8 @@ mod tests {
             }],
             ..Default::default()
         };
-        let output = ctx.run(input, |ctx| {
-            capture.update(ctx, 35.0, GraceCurve::default(), false, Some(0.25));
+        let output = ctx.run_ui(input, |ui| {
+            capture.update(ui.ctx(), 35.0, GraceCurve::default(), false, Some(0.25));
         });
         let image = image::open(&path).unwrap().into_rgba8();
         assert_eq!(image.dimensions(), (2, 1));
@@ -242,12 +242,12 @@ mod tests {
         };
         // Discard egui's initial layout/font repaint requests.
         for _ in 0..3 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
             });
         }
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
         });
         let viewport = &output.viewport_output[&egui::ViewportId::ROOT];
         assert!(viewport.repaint_delay > Duration::from_millis(100));
@@ -255,8 +255,8 @@ mod tests {
         assert!(!capture.requested);
 
         capture.started = Instant::now() - Duration::from_secs(2);
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
         });
         assert!(
             output.viewport_output[&egui::ViewportId::ROOT]
@@ -265,8 +265,8 @@ mod tests {
                 .any(|command| { matches!(command, egui::ViewportCommand::Screenshot(_)) })
         );
         assert!(capture.requested);
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
         });
         assert!(
             !output.viewport_output[&egui::ViewportId::ROOT]

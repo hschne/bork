@@ -147,8 +147,8 @@ fn elf_paths(path: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for entry in dynamic {
         if !matches!(
-            entry.tag32(endian),
-            Some(object::elf::DT_RUNPATH | object::elf::DT_RPATH)
+            entry.tag(endian),
+            object::elf::DT_RUNPATH | object::elf::DT_RPATH
         ) {
             continue;
         }

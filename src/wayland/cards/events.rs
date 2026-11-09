@@ -2,8 +2,7 @@
 use super::{Seat, State};
 use smithay_client_toolkit::{
     compositor::CompositorHandler,
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_seat,
-    delegate_shm,
+    delegate_dispatch2, delegate_registry,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
@@ -198,9 +197,5 @@ impl ProvidesRegistryState for State {
 
 delegate_noop!(State: ignore wl_keyboard::WlKeyboard);
 delegate_noop!(State: ignore wl_pointer::WlPointer);
-delegate_compositor!(State);
-delegate_output!(State);
-delegate_shm!(State);
-delegate_seat!(State);
-delegate_layer!(State);
+delegate_dispatch2!(State);
 delegate_registry!(State);
