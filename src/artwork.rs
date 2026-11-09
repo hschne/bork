@@ -52,8 +52,10 @@ impl Canvas {
     pub(crate) fn write_argb(&self, output: &mut [u8]) {
         for (source, pixel) in self
             .rgba
-            .chunks_exact(4)
-            .zip(output[..self.rgba.len()].chunks_exact_mut(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(output[..self.rgba.len()].as_chunks_mut::<4>().0.iter_mut())
         {
             let colour = u32::from_be_bytes([source[3], source[0], source[1], source[2]]);
             pixel.copy_from_slice(&colour.to_ne_bytes());

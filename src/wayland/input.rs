@@ -2,7 +2,7 @@
 use crate::clock::boot_time;
 use anyhow::{Context, Result, ensure};
 use smithay_client_toolkit::{
-    delegate_registry, delegate_seat,
+    delegate_dispatch2, delegate_registry,
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{Capability, SeatHandler, SeatState},
@@ -171,7 +171,7 @@ impl ProvidesRegistryState for State {
     }
     registry_handlers![SeatState];
 }
-delegate_seat!(State);
+delegate_dispatch2!(State);
 delegate_registry!(State);
 
 fn aggregate_idle(floor: u64, starts: impl Iterator<Item = Option<u64>>) -> Option<u64> {

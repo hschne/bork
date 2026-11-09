@@ -18,12 +18,12 @@ pub(super) struct Capture {
 // Record actual widget bounds only when the private capture adapter is active.
 pub(super) fn target(name: &'static str, response: &egui::Response) {
     if response.ctx.data(|data| {
-        data.get_temp::<bool>(egui::Id::new("bork-test-capture"))
+        data.get_temp::<bool>(egui::Id::unique("bork-test-capture"))
             .unwrap_or(false)
     }) {
         let value = (response.rect, response.has_focus());
         response.ctx.data_mut(|data| {
-            data.insert_temp(egui::Id::new(("bork-test-target", name)), value);
+            data.insert_temp(egui::Id::unique(("bork-test-target", name)), value);
         });
     }
 }
@@ -31,7 +31,9 @@ pub(super) fn target(name: &'static str, response: &egui::Response) {
 impl Capture {
     pub(super) fn new(ctx: &egui::Context) -> Self {
         let path = std::env::var_os("BORK_TEST_CAPTURE").map(PathBuf::from);
-        ctx.data_mut(|data| data.insert_temp(egui::Id::new("bork-test-capture"), path.is_some()));
+        ctx.data_mut(|data| {
+            data.insert_temp(egui::Id::unique("bork-test-capture"), path.is_some())
+        });
         Self {
             path,
             started: Instant::now(),
@@ -53,7 +55,7 @@ impl Capture {
                 let mut layout = String::new();
                 for name in ["curve-start", "save", "timeline", "live-preview"] {
                     let Some((rect, focused)) = ctx.data(|data| {
-                        data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                        data.get_temp::<(egui::Rect, bool)>(egui::Id::unique((
                             "bork-test-target",
                             name,
                         )))
@@ -97,47 +99,37 @@ impl Capture {
                 if (self.manual && path.with_extension("capture").exists())
                     || (!self.manual && delay.is_zero())
                 {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
-                        egui::UserData::default(),
-                    ));
+                    let path = path.clone();
+                    let ctx = ctx.clone();
+                    ctx.clone().request_screenshot(move |image| {
+                        let result = (|| -> Result<()> {
+                            image::save_buffer_with_format(
+                                &path,
+                                image.as_raw(),
+                                image.width() as u32,
+                                image.height() as u32,
+                                image::ColorType::Rgba8,
+                                image::ImageFormat::Png,
+                            )?;
+                            std::fs::write(
+                                path.with_extension("json"),
+                                serde_json::to_vec_pretty(&serde_json::json!({
+                                    "level": level, "curve": curve, "test_card": test_card,
+                                    "signal_loss": signal_loss,
+                                }))?,
+                            )?;
+                            Ok(())
+                        })();
+                        if let Err(error) = result {
+                            eprintln!("Capture failed: {error:#}");
+                        }
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    });
                     self.requested = true;
                 } else {
                     // Capture must wake even when a static scene stops repainting.
                     ctx.request_repaint_after(delay);
                 }
-            }
-            let image = ctx.input(|input| {
-                input.events.iter().find_map(|event| {
-                    if let egui::Event::Screenshot { image, .. } = event {
-                        Some(image.clone())
-                    } else {
-                        None
-                    }
-                })
-            });
-            if let Some(image) = image {
-                let result = (|| -> Result<()> {
-                    image::save_buffer_with_format(
-                        path,
-                        image.as_raw(),
-                        image.width() as u32,
-                        image.height() as u32,
-                        image::ColorType::Rgba8,
-                        image::ImageFormat::Png,
-                    )?;
-                    std::fs::write(
-                        path.with_extension("json"),
-                        serde_json::to_vec_pretty(&serde_json::json!({
-                            "level": level, "curve": curve, "test_card": test_card,
-                            "signal_loss": signal_loss,
-                        }))?,
-                    )?;
-                    Ok(())
-                })();
-                if let Err(error) = result {
-                    eprintln!("Capture failed: {error:#}");
-                }
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
     }
@@ -152,7 +144,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("preview.png");
         let ctx = egui::Context::default();
-        ctx.data_mut(|data| data.insert_temp(egui::Id::new("bork-test-capture"), true));
+        ctx.data_mut(|data| data.insert_temp(egui::Id::unique("bork-test-capture"), true));
         let mut capture = Capture {
             path: Some(path.clone()),
             started: Instant::now() - Duration::from_secs(10),
@@ -161,23 +153,26 @@ mod tests {
             layout: String::new(),
         };
         for _ in 0..4 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     for name in ["curve-start", "save", "timeline", "live-preview"] {
                         target(name, &ui.button(name));
                     }
                 });
-                capture.update(ctx, 0.0, GraceCurve::default(), false, None);
-            });
+                capture.update(ui.ctx(), 0.0, GraceCurve::default(), false, None);
+            })
+            .textures_delta
+            .clear();
         }
         let ready = std::fs::read_to_string(path.with_extension("ready")).unwrap();
         assert!(ready.contains("curve-start "));
         assert!(ready.contains("intensity 35\n"));
         assert!(!capture.requested);
         std::fs::write(path.with_extension("capture"), "").unwrap();
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), false, None);
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), false, None);
         });
+        output.textures_delta.clear();
         assert!(capture.requested);
         assert!(
             output.viewport_output[&egui::ViewportId::ROOT]
@@ -188,32 +183,38 @@ mod tests {
     }
 
     #[test]
-    fn screenshot_event_writes_rgba_png_and_metadata_then_closes() {
+    fn screenshot_callback_writes_rgba_png_and_metadata_then_closes() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("preview.png");
         let ctx = egui::Context::default();
         let mut capture = Capture {
             path: Some(path.clone()),
-            started: Instant::now(),
-            requested: true,
+            started: Instant::now() - Duration::from_secs(2),
+            requested: false,
             manual: false,
             layout: String::new(),
         };
         let pixels = [255, 0, 0, 255, 0, 128, 255, 255];
-        let input = egui::RawInput {
-            events: vec![egui::Event::Screenshot {
-                viewport_id: egui::ViewportId::ROOT,
-                user_data: egui::UserData::default(),
-                image: std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied(
-                    [2, 1],
-                    &pixels,
-                )),
-            }],
-            ..Default::default()
-        };
-        let output = ctx.run(input, |ctx| {
-            capture.update(ctx, 35.0, GraceCurve::default(), false, Some(0.25));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 35.0, GraceCurve::default(), false, Some(0.25));
         });
+        output.textures_delta.clear();
+        let callback = output.viewport_output[&egui::ViewportId::ROOT]
+            .commands
+            .iter()
+            .find_map(|command| {
+                if let egui::ViewportCommand::Screenshot(callback) = command {
+                    Some(callback.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        callback.complete(std::sync::Arc::new(
+            egui::ColorImage::from_rgba_unmultiplied([2, 1], &pixels),
+        ));
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
         let image = image::open(&path).unwrap().into_rgba8();
         assert_eq!(image.dimensions(), (2, 1));
         assert_eq!(image.as_raw(), &pixels);
@@ -242,22 +243,26 @@ mod tests {
         };
         // Discard egui's initial layout/font repaint requests.
         for _ in 0..3 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| {
-                capture.update(ctx, 0.0, GraceCurve::default(), true, None)
-            });
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
+            })
+            .textures_delta
+            .clear();
         }
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
         });
+        output.textures_delta.clear();
         let viewport = &output.viewport_output[&egui::ViewportId::ROOT];
         assert!(viewport.repaint_delay > Duration::from_millis(100));
         assert!(viewport.repaint_delay <= Duration::from_millis(1500));
         assert!(!capture.requested);
 
         capture.started = Instant::now() - Duration::from_secs(2);
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
         });
+        output.textures_delta.clear();
         assert!(
             output.viewport_output[&egui::ViewportId::ROOT]
                 .commands
@@ -265,9 +270,10 @@ mod tests {
                 .any(|command| { matches!(command, egui::ViewportCommand::Screenshot(_)) })
         );
         assert!(capture.requested);
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            capture.update(ctx, 0.0, GraceCurve::default(), true, None)
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            capture.update(ui.ctx(), 0.0, GraceCurve::default(), true, None)
         });
+        output.textures_delta.clear();
         assert!(
             !output.viewport_output[&egui::ViewportId::ROOT]
                 .commands

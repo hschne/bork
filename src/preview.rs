@@ -38,7 +38,7 @@ pub fn open() -> Result<()> {
             let gl = cc.gl.as_ref().context("OpenGL context unavailable")?;
             let scene = Scene::new(gl, &settings)?;
             // egui follows the system theme; leave its neutral controls intact.
-            cc.egui_ctx.style_mut(|style| {
+            cc.egui_ctx.all_styles_mut(|style| {
                 style.spacing.item_spacing = egui::vec2(10.0, 10.0);
                 style.spacing.button_padding = egui::vec2(12.0, 7.0);
             });
@@ -144,7 +144,8 @@ impl Preview {
 }
 
 impl eframe::App for Preview {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
         self.playback.tick(Instant::now());
         if let Some(receiver) = &self.image_pending {
             match receiver.try_recv() {
@@ -188,8 +189,8 @@ impl eframe::App for Preview {
             }
         }
         egui::CentralPanel::default()
-            .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(20))
-            .show(ctx, |ui| {
+            .frame(egui::Frame::central_panel(ui.style()).inner_margin(20))
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.strong("Bork — Preview");
                     ui.add_space(4.0);
@@ -208,7 +209,7 @@ impl eframe::App for Preview {
             });
         if self.confirm_trial {
             let response =
-                egui::Modal::new(egui::Id::new("live-preview-confirmation")).show(ctx, |ui| {
+                egui::Modal::new(egui::Id::unique("live-preview-confirmation")).show(ctx, |ui| {
                     ui.set_width(300.0);
                     ui.strong("Live Preview");
                     ui.label("Apply to your desktop for 5 seconds? It restores automatically.");
