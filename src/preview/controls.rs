@@ -51,8 +51,7 @@ impl Preview {
                     egui::Button::new(if self.playback.playing { "⏸" } else { "▶" }).frame(false),
                 )
                 .on_hover_text(label);
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
             if response.clicked() {
                 self.playback.toggle(Instant::now());
             }

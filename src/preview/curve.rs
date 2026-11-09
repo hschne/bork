@@ -36,7 +36,7 @@ pub(super) fn show(
             let point = screen(points[i].progress, points[i].intensity);
             let response = ui.interact(
                 Rect::from_center_size(point, Vec2::splat(28.0)),
-                ui.id().with(("curve-point", i)),
+                ui.scope_id().with(("curve-point", i)),
                 Sense::click_and_drag(),
             );
             if i == 0 {
@@ -151,7 +151,7 @@ pub(super) fn show(
             screen(progress, edited.level(progress).value())
         })
         .collect();
-    painter.add(egui::Shape::line(line, Stroke::new(2.0, color)));
+    painter.add(egui::Shape::line(line, Stroke::new(2.0_f32, color)));
     if let Some(progress) = progress {
         let marker = screen(progress, edited.level(progress).value());
         painter.line_segment(
@@ -159,7 +159,7 @@ pub(super) fn show(
                 Pos2::new(marker.x, plot.top()),
                 Pos2::new(marker.x, plot.bottom()),
             ],
-            Stroke::new(1.0, text),
+            Stroke::new(1.0_f32, text),
         );
         painter.circle_filled(marker, 4.0, ui.visuals().text_color());
     }
@@ -175,9 +175,9 @@ pub(super) fn show(
             },
         );
         if i < 3 {
-            painter.circle_stroke(center, 5.0, Stroke::new(2.0, color));
+            painter.circle_stroke(center, 5.0, Stroke::new(2.0_f32, color));
             if focused == Some(i) {
-                painter.circle_stroke(center, 9.0, Stroke::new(1.0, color));
+                painter.circle_stroke(center, 9.0, Stroke::new(1.0_f32, color));
             }
         }
     }
@@ -224,14 +224,14 @@ mod tests {
                 let ctx = egui::Context::default();
                 let curve = GraceCurve::default();
                 ctx.data_mut(|data| {
-                    data.insert_temp(egui::Id::new("bork-test-capture"), true);
+                    data.insert_temp(egui::Id::unique("bork-test-capture"), true);
                 });
                 let mut edited = None;
                 for frame in 0..5 {
                     let mut input = egui::RawInput::default();
                     if frame == 2 || frame == 3 {
                         let (rect, _) = ctx.data(|data| {
-                            data.get_temp::<(egui::Rect, bool)>(egui::Id::new((
+                            data.get_temp::<(egui::Rect, bool)>(egui::Id::unique((
                                 "bork-test-target",
                                 "curve-start",
                             )))
@@ -247,7 +247,6 @@ mod tests {
                     }
                     if frame == 4 {
                         // The modifier has changed again by the time the frame runs.
-                        input.modifiers.shift = !shifted;
                         input.events.push(egui::Event::Key {
                             key,
                             physical_key: None,
@@ -258,12 +257,20 @@ mod tests {
                                 ..Default::default()
                             },
                         });
+                        input
+                            .events
+                            .push(egui::Event::ModifiersChanged(egui::Modifiers {
+                                shift: !shifted,
+                                ..Default::default()
+                            }));
                     }
-                    let _ = ctx.run_ui(input, |ui| {
+                    ctx.run_ui(input, |ui| {
                         egui::CentralPanel::default().show(ui, |ui| {
                             edited = show(ui, curve, None, 60).unwrap();
                         });
-                    });
+                    })
+                    .textures_delta
+                    .clear();
                 }
                 let expected =
                     curve.points()[0].intensity + direction * if shifted { 5.0 } else { 1.0 };

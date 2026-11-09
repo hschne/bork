@@ -209,7 +209,7 @@ impl eframe::App for Preview {
             });
         if self.confirm_trial {
             let response =
-                egui::Modal::new(egui::Id::new("live-preview-confirmation")).show(ctx, |ui| {
+                egui::Modal::new(egui::Id::unique("live-preview-confirmation")).show(ctx, |ui| {
                     ui.set_width(300.0);
                     ui.strong("Live Preview");
                     ui.label("Apply to your desktop for 5 seconds? It restores automatically.");

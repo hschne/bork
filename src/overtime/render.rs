@@ -229,7 +229,9 @@ mod tests {
         let image = renderer.paint(&background, 300, 300);
         let colored: Vec<_> = image
             .rgba()
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .enumerate()
             .filter(|(_, pixel)| pixel[0] > 0)
             .map(|(i, _)| (i % 1280, i / 1280))
@@ -243,7 +245,9 @@ mod tests {
         assert!(
             image
                 .rgba()
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .all(|pixel| pixel[1] == 0 && pixel[2] == 0)
         );
     }
